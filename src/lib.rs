@@ -88,19 +88,21 @@ macro_rules! impl_bsl {
 
             pub fn try_new(b: $ft, d: $ft, u: $ft, a: $ft) -> Result<Self, InvalidRangeError> {
                 if !(b + d + u).approx_eq(1.0) {
-                    return Err(InvalidRangeError("b + d + u > 1".to_string()));
+                    return Err(InvalidRangeError(
+                        "b + d + u = 1 is not satisfied".to_string(),
+                    ));
                 }
                 if !b.is_in_range(0.0, 1.0) {
-                    return Err(InvalidRangeError("b > 1 or b < 0".to_string()));
+                    return Err(InvalidRangeError("b ∈ [0,1] is not satisfied".to_string()));
                 }
                 if !d.is_in_range(0.0, 1.0) {
-                    return Err(InvalidRangeError("d > 1 or d < 0".to_string()));
+                    return Err(InvalidRangeError("d ∈ [0,1] is not satisfied".to_string()));
                 }
                 if !u.is_in_range(0.0, 1.0) {
-                    return Err(InvalidRangeError("u > 1 or u < 0".to_string()));
+                    return Err(InvalidRangeError("u ∈ [0,1] is not satisfied".to_string()));
                 }
                 if !a.is_in_range(0.0, 1.0) {
-                    return Err(InvalidRangeError("a > 1 or a < 0".to_string()));
+                    return Err(InvalidRangeError("a ∈ [0,1] is not satisfied".to_string()));
                 }
                 Ok(Self {
                     belief: b,
@@ -252,9 +254,7 @@ macro_rules! impl_bsl {
 
         impl SLTrans<$ft> for BSL<$ft> {
             fn unc(&self, b: $ft) -> Self {
-                if !b.is_in_range(0.0, 1.0) {
-                    panic!("b > 1 or b < 0");
-                }
+                assert!(b.is_in_range(0.0, 1.0), "b ∈ [0,1] is not satisfied.");
                 Self::new(
                     b * self.belief,
                     b * self.disbelief,
@@ -264,9 +264,7 @@ macro_rules! impl_bsl {
             }
             fn opp(&self, b: $ft, d: $ft) -> Self {
                 let u = 1.0 - b - d;
-                if !u.is_in_range(0.0, 1.0) {
-                    panic!("b + d > 1 or b + d < 0");
-                }
+                assert!(u.is_in_range(0.0, 1.0), "b + d ∈ [0,1] is not satisfied.");
                 Self::new(
                     b * self.belief + d * self.disbelief,
                     b * self.disbelief + d * self.belief,
@@ -275,9 +273,7 @@ macro_rules! impl_bsl {
                 )
             }
             fn bsr(&self, ev: $ft) -> Self {
-                if !ev.is_in_range(0.0, 1.0) {
-                    panic!("ev > 1 or ev < 0");
-                }
+                assert!(ev.is_in_range(0.0, 1.0), "ev ∈ [0,1] is not satisfied.");
                 Self::new(
                     ev * self.belief,
                     ev * self.disbelief,
@@ -378,18 +374,24 @@ macro_rules! impl_msl {
         impl<const N: usize> MSL1d<$ft, N> {
             pub fn try_new(b: [$ft; N], u: $ft, a: [$ft; N]) -> Result<Self, InvalidRangeError> {
                 if !(b.iter().sum::<$ft>() + u).approx_eq(1.0) {
-                    return Err(InvalidRangeError("sum(b) + u > 1".to_string()));
+                    return Err(InvalidRangeError(
+                        "sum(b) + u = 1 is not satisfied".to_string(),
+                    ));
                 }
                 if !a.iter().sum::<$ft>().approx_eq(1.0) {
-                    return Err(InvalidRangeError("sum(a) > 1".to_string()));
+                    return Err(InvalidRangeError("sum(a) = 1 is not satisfied".to_string()));
                 }
 
                 for i in 0..N {
                     if !b[i].is_in_range(0.0, 1.0) {
-                        return Err(InvalidRangeError(format!("b[{i}] not in [0, 1]")));
+                        return Err(InvalidRangeError(format!(
+                            "b[{i}] ∈ [0,1] is not satisfied"
+                        )));
                     }
                     if !a[i].is_in_range(0.0, 1.0) {
-                        return Err(InvalidRangeError(format!("a[{i}] not in [0, 1]")));
+                        return Err(InvalidRangeError(format!(
+                            "a[{i}] ∈ [0,1] is not satisfied"
+                        )));
                     }
                 }
                 Ok(Self {
@@ -416,7 +418,7 @@ macro_rules! impl_msl {
             type Output = MSL1d<$ft, M>;
 
             fn ded(&self, wyx: &[MSL1d<$ft, M>; N], ay: [$ft; M]) -> Self::Output {
-                assert!(N > 0 && M > 1, "N < 1 or M < 2");
+                assert!(N > 0 && M > 1, "N > 0 and M > 1 must hold.");
                 let eyhx: [$ft; M] = array::from_fn(|t| {
                     (0..N)
                         .map(|i| self.base_rate[i] * wyx[i].projection(t))
