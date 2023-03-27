@@ -411,79 +411,80 @@ macro_rules! impl_msl {
         }
 
         impl<const N: usize, const M: usize> MSLOps<[MSL1d<$ft, M>; N], [$ft; M]>
-            for MSL1d<$ft, M>
+            for MSL1d<$ft, N>
         {
             type Output = MSL1d<$ft, M>;
 
             fn ded(&self, wyx: &[MSL1d<$ft, M>; N], ay: [$ft; M]) -> Self::Output {
-                let eyhx = |t: usize| {
+                assert!(N > 0 && M > 1, "N < 1 or M < 2");
+                let eyhx: [$ft; M] = array::from_fn(|t| {
                     (0..N)
                         .map(|i| self.base_rate[i] * wyx[i].projection(t))
-                        .sum::<$ft>()
-                };
+                        .sum()
+                });
 
-                let max_sr = |t: usize| {
-                    let mut s = 0;
-                    let mut r = 0;
-                    let mut v = 1.0;
-                    for r1 in 0..N {
-                        for s1 in 0..N {
-                            let w =
-                                1.0 - wyx[r1].belief[t] - wyx[r1].uncertainty + wyx[s1].belief[t];
-                            if v > w {
-                                v = w;
-                                r = r1;
-                                s = s1;
+                let intu = (0..M)
+                    .map(|t| {
+                        let e = eyhx[t];
+                        let (r, s) = {
+                            let mut s = 0;
+                            let mut r = 0;
+                            let mut v = 1.0;
+                            for r1 in 0..N {
+                                for s1 in 0..N {
+                                    let w = 1.0 - wyx[r1].belief[t] - wyx[r1].uncertainty
+                                        + wyx[s1].belief[t];
+                                    if v > w {
+                                        v = w;
+                                        r = r1;
+                                        s = s1;
+                                    }
+                                }
                             }
+                            (r, s)
+                        };
+                        let eyhxx = (1.0 - ay[t]) * wyx[s].belief[t]
+                            + ay[t] * (wyx[r].belief[t] + wyx[r].uncertainty);
+                        if e <= eyhxx {
+                            (e - wyx[s].belief[t]) / ay[t]
+                        } else {
+                            (wyx[r].belief[t] + wyx[r].uncertainty - e) / (1.0 - ay[t])
                         }
-                    }
-                    (r, s)
-                };
-                let eyhxx = |t: usize, r: usize, s: usize| {
-                    (1.0 - ay[t]) * wyx[s].belief[t]
-                        + ay[t] * (wyx[r].belief[t] + wyx[r].uncertainty)
-                };
-                let apexh = |t: usize| {
-                    let e = eyhx(t);
-                    let (r, s) = max_sr(t);
-                    if e <= eyhxx(t, r, s) {
-                        (e - wyx[s].belief[t]) / ay[t]
-                    } else {
-                        (wyx[r].belief[t] + wyx[r].uncertainty - e) / (1.0 - ay[t])
-                    }
-                };
-                let apex = {
-                    let intu = (0..M).map(apexh).reduce(<$ft>::max).unwrap();
-                    let adju = |t: usize| {
-                        let e = eyhx(t);
+                    })
+                    .reduce(<$ft>::max)
+                    .unwrap();
+                let apex = (0..M)
+                    .map(|t| {
+                        let e = eyhx[t];
                         let intb = e - ay[t] * intu;
                         if intb < 0.0 {
                             e / ay[t]
                         } else {
                             intu
                         }
-                    };
-                    (0..M).map(adju).reduce(<$ft>::min).unwrap()
-                };
+                    })
+                    .reduce(<$ft>::min)
+                    .unwrap();
+
                 let u = apex
                     - (0..N)
                         .map(|i| (apex - wyx[i].uncertainty) * self.belief[i])
                         .sum::<$ft>();
                 let b = array::from_fn(|j| {
-                    let eyx = (0..N)
+                    (0..N)
                         .map(|i| self.projection(i) * wyx[i].projection(j))
-                        .sum::<$ft>();
-                    eyx - ay[j] * u
+                        .sum::<$ft>()
+                        - ay[j] * u
                 });
                 MSL1d::<$ft, M>::new(b, u, ay)
             }
         }
 
-        impl MSLOps<[BSL<$ft>; 2], $ft> for MSL1d<$ft, 2> {
+        impl<const N: usize> MSLOps<[BSL<$ft>; N], $ft> for MSL1d<$ft, N> {
             type Output = BSL<$ft>;
 
-            fn ded(&self, wyx: &[BSL<$ft>; 2], ay: $ft) -> Self::Output {
-                let wyx: [MSL1d<$ft, 2>; 2] = array::from_fn(|i| (&wyx[i]).into());
+            fn ded(&self, wyx: &[BSL<$ft>; N], ay: $ft) -> Self::Output {
+                let wyx: [MSL1d<$ft, 2>; N] = array::from_fn(|i| (&wyx[i]).into());
                 self.ded(&wyx, [ay, 1.0 - ay]).into()
             }
         }
@@ -587,23 +588,38 @@ mod tests {
 
     #[test]
     fn test_deduction2() {
-        let wa = MSL1d::<f32, 2>::new([0.7, 0.1], 0.2, [0.5, 0.5]);
+        let wa = MSL1d::<f32, 3>::new([0.7, 0.1, 0.0], 0.2, [0.3, 0.3, 0.4]);
         let wxa = [
             BSL::<f32>::new(0.7, 0.0, 0.3, 0.5),
             BSL::<f32>::new(0.0, 0.7, 0.3, 0.5),
+            BSL::<f32>::new(0.0, 0.0, 1.0, 0.5),
         ];
-        println!("{}", wa.ded(&wxa, 0.5));
+        let wx = wa.ded(&wxa, 0.5);
+        println!("{}|{}", wx, wx.projection());
 
         let wxa = [
             MSL1d::<f32, 2>::new([0.7, 0.0], 0.3, [0.5, 0.5]),
             MSL1d::<f32, 2>::new([0.0, 0.7], 0.3, [0.5, 0.5]),
+            MSL1d::<f32, 2>::new([0.0, 0.0], 1.0, [0.5, 0.5]),
         ];
-        println!("{:?}", wa.ded(&wxa, [0.5, 0.5]));
+        let wx = wa.ded(&wxa, [0.5, 0.5]);
+        println!("{:?}|{}", wx, wx.projection(0));
 
         let wa = BSL::<f32>::new(0.7, 0.1, 0.2, 0.5);
         let wxta = BSL::<f32>::new(0.7, 0.0, 0.3, 0.5);
         let wxfa = BSL::<f32>::new(0.0, 0.7, 0.3, 0.5);
         println!("{}", wa.ded(&wxta, &wxfa, 0.5));
+    }
+
+    #[test]
+    fn test_deduction3() {
+        let wa = MSL1d::<f32, 2>::new([0.7, 0.1], 0.2, [0.5, 0.5]);
+        let wxa = [
+            MSL1d::<f32, 3>::new([0.7, 0.0, 0.0], 0.3, [0.3, 0.3, 0.4]),
+            MSL1d::<f32, 3>::new([0.0, 0.7, 0.0], 0.3, [0.3, 0.3, 0.4]),
+        ];
+        let wx = wa.ded(&wxa, [0.3, 0.3, 0.4]);
+        println!("{:?}|{}", wx, wx.projection(0));
     }
 
     #[test]
