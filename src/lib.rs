@@ -382,6 +382,10 @@ macro_rules! impl_msl {
                     return Err(InvalidRangeError("sum(a) = 1 is not satisfied".to_string()));
                 }
 
+                if !u.is_in_range(0.0, 1.0) {
+                    return Err(InvalidRangeError(format!("u ∈ [0,1] is not satisfied")));
+                }
+
                 for i in 0..N {
                     if !b[i].is_in_range(0.0, 1.0) {
                         return Err(InvalidRangeError(format!(
@@ -455,12 +459,11 @@ macro_rules! impl_msl {
                     })
                     .reduce(<$ft>::max)
                     .unwrap();
+
                 let apex = (0..M)
                     .map(|t| {
-                        let e = eyhx[t];
-                        let intb = e - ay[t] * intu;
-                        if intb < 0.0 {
-                            e / ay[t]
+                        if eyhx[t] < ay[t] * intu {
+                            eyhx[t] / ay[t]
                         } else {
                             intu
                         }
@@ -472,7 +475,7 @@ macro_rules! impl_msl {
                     - (0..N)
                         .map(|i| (apex - wyx[i].uncertainty) * self.belief[i])
                         .sum::<$ft>();
-                let b = array::from_fn(|j| {
+                let b: [$ft; M] = array::from_fn(|j| {
                     (0..N)
                         .map(|i| self.projection(i) * wyx[i].projection(j))
                         .sum::<$ft>()
@@ -554,6 +557,12 @@ mod tests {
                 assert!(MSL1d::<$ft, 2>::try_new([0.0, 1.0], 0.0, [1.1, -0.1])
                     .map_err(|e| println!("{e}"))
                     .is_err());
+                assert!(MSL1d::<$ft, 2>::try_new([0.0, -1.0], 2.0, [1.1, -0.1])
+                    .map_err(|e| println!("{e}"))
+                    .is_err());
+                assert!(MSL1d::<$ft, 2>::try_new([1.0, 1.0], -1.0, [1.1, -0.1])
+                    .map_err(|e| println!("{e}"))
+                    .is_err());
             };
         }
         def!(f32);
@@ -571,6 +580,21 @@ mod tests {
         let wyfx = BSL::<f32>::new(0.13, 0.57, 0.3, 0.5);
         let wx = BSL::<f32>::new(0.7, 0.0, 0.3, 0.33);
         println!("{}", wx.ded(&wytx, &wyfx, 0.5));
+    }
+
+    #[test]
+    fn test_deduction() {
+        let b_a = 1.0;
+        let b_xa = 0.0;
+        let wa = MSL1d::<f32, 3>::new([b_a, 0.0, 0.0], 1.0 - b_a, [0.25, 0.25, 0.5]);
+        let wxa = [
+            BSL::<f32>::new(b_xa, 0.0, 1.0 - b_xa, 0.5),
+            BSL::<f32>::new(0.0, 0.0, 1.0, 0.5),
+            BSL::<f32>::new(0.0, 0.0, 1.0, 0.5),
+        ];
+        println!("{}", wxa[0]);
+        let x = wa.ded(&wxa, 0.5);
+        println!("{}", x.projection());
     }
 
     #[test]
