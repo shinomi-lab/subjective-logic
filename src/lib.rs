@@ -1,6 +1,10 @@
+//!
+//! 本クレートは Subjective Logicの実装です。
+//!
 use std::{array, fmt::Display, ops::Index};
 
-/// Binomial SL
+#[cfg_attr(doc, katexit::katexit)]
+/// Binomial opinion
 #[derive(Debug)]
 pub struct BSL<T> {
     belief: T,
