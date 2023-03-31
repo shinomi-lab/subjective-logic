@@ -34,7 +34,7 @@ jobs:
     - name: Deploy
       uses: actions/upload-pages-artifact@v1
       with:
-        path: target/doc
+        path: target/doc/subjective_logic/
 
   deploy:
   
