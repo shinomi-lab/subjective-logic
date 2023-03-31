@@ -6,14 +6,14 @@ use std::{array, fmt::Display, ops::Index};
 #[cfg_attr(doc, katexit::katexit)]
 /// Binomial opinion
 #[derive(Debug)]
-pub struct BSL<T> {
+pub struct BOpinion<T> {
     belief: T,
     disbelief: T,
     uncertainty: T,
     base_rate: T,
 }
 
-impl<T: Display> Display for BSL<T> {
+impl<T: Display> Display for BOpinion<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -23,60 +23,14 @@ impl<T: Display> Display for BSL<T> {
     }
 }
 
-pub trait SLOps {
-    /// multiplication
-    fn mul(&self, rhs: &Self) -> Self;
-    /// comultiplication
-    fn comul(&self, rhs: &Self) -> Self;
-    /// cumulative fusion
-    fn cfus(&self, rhs: &Self) -> Option<Self>
-    where
-        Self: Sized;
-}
-
-pub trait BSLOps<T> {
+pub trait BOperator<T> {
     /// deduction
     fn ded(&self, ytx: &Self, yfx: &Self, ay: T) -> Self;
 }
 
-pub trait SLTrans<T> {
-    /// uncertainty favouring
-    fn unc(&self, b: T) -> Self;
-    /// opposite belief favouring
-    fn opp(&self, b: T, d: T) -> Self;
-    /// base rate sensitive
-    fn bsr(&self, ev: T) -> Self;
-}
-
-#[derive(thiserror::Error, Debug)]
-#[error("At least one parameter is invalid because {0}.")]
-pub struct InvalidRangeError(String);
-
-trait EpsilonComp {
-    fn is_in_range(self, from: Self, to: Self) -> bool;
-    fn approx_eq(self, to: Self) -> bool;
-}
-
-macro_rules! impl_epsilon_comp {
-    ($ft: ty) => {
-        impl EpsilonComp for $ft {
-            fn is_in_range(self, from: Self, to: Self) -> bool {
-                self >= from - <$ft>::EPSILON && self <= to + <$ft>::EPSILON
-            }
-
-            fn approx_eq(self, to: Self) -> bool {
-                self >= to - <$ft>::EPSILON && self <= to + <$ft>::EPSILON
-            }
-        }
-    };
-}
-
-impl_epsilon_comp!(f32);
-impl_epsilon_comp!(f64);
-
 macro_rules! impl_bsl {
     ($ft: ty) => {
-        impl BSL<$ft> {
+        impl BOpinion<$ft> {
             pub fn new_unchecked(b: $ft, d: $ft, u: $ft, a: $ft) -> Self {
                 Self {
                     belief: b,
@@ -125,7 +79,7 @@ macro_rules! impl_bsl {
             }
         }
 
-        impl SLOps for BSL<$ft> {
+        impl Operator for BOpinion<$ft> {
             fn mul(&self, rhs: &Self) -> Self {
                 let a = self.base_rate * rhs.base_rate;
                 let b = self.belief * rhs.belief
@@ -171,7 +125,7 @@ macro_rules! impl_bsl {
             }
         }
 
-        impl BSLOps<$ft> for BSL<$ft> {
+        impl BOperator<$ft> for BOpinion<$ft> {
             fn ded(&self, ytx: &Self, yfx: &Self, ay: $ft) -> Self {
                 let rvax = (1.0 - self.base_rate);
                 let bi = self.belief * ytx.belief
@@ -256,7 +210,7 @@ macro_rules! impl_bsl {
             }
         }
 
-        impl SLTrans<$ft> for BSL<$ft> {
+        impl Transitivity<$ft> for BOpinion<$ft> {
             fn unc(&self, b: $ft) -> Self {
                 assert!(b.is_in_range(0.0, 1.0), "b ∈ [0,1] is not satisfied.");
                 Self::new(
@@ -292,20 +246,66 @@ macro_rules! impl_bsl {
 impl_bsl!(f32);
 impl_bsl!(f64);
 
+pub trait Operator {
+    /// multiplication
+    fn mul(&self, rhs: &Self) -> Self;
+    /// comultiplication
+    fn comul(&self, rhs: &Self) -> Self;
+    /// cumulative fusion
+    fn cfus(&self, rhs: &Self) -> Option<Self>
+    where
+        Self: Sized;
+}
+
+pub trait Transitivity<T> {
+    /// uncertainty favouring
+    fn unc(&self, b: T) -> Self;
+    /// opposite belief favouring
+    fn opp(&self, b: T, d: T) -> Self;
+    /// base rate sensitive
+    fn bsr(&self, ev: T) -> Self;
+}
+
+#[derive(thiserror::Error, Debug)]
+#[error("At least one parameter is invalid because {0}.")]
+pub struct InvalidRangeError(String);
+
+trait EpsilonComp {
+    fn is_in_range(self, from: Self, to: Self) -> bool;
+    fn approx_eq(self, to: Self) -> bool;
+}
+
+macro_rules! impl_epsilon_comp {
+    ($ft: ty) => {
+        impl EpsilonComp for $ft {
+            fn is_in_range(self, from: Self, to: Self) -> bool {
+                self >= from - <$ft>::EPSILON && self <= to + <$ft>::EPSILON
+            }
+
+            fn approx_eq(self, to: Self) -> bool {
+                self >= to - <$ft>::EPSILON && self <= to + <$ft>::EPSILON
+            }
+        }
+    };
+}
+
+impl_epsilon_comp!(f32);
+impl_epsilon_comp!(f64);
+
 #[derive(Debug)]
-pub struct MSL<T, U> {
+pub struct MOpinion<T, U> {
     belief: T,
     uncertainty: U,
     base_rate: T,
 }
 
-impl<T: Display, U: Display> Display for MSL<T, U> {
+impl<T: Display, U: Display> Display for MOpinion<T, U> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{},{},{}", self.belief, self.uncertainty, self.base_rate)
     }
 }
 
-impl<T, U> MSL<T, U> {
+impl<T, U> MOpinion<T, U> {
     pub fn new_unchecked(b: T, u: U, a: T) -> Self {
         Self {
             belief: b,
@@ -315,67 +315,18 @@ impl<T, U> MSL<T, U> {
     }
 }
 
-pub type MSL1d<T, const N: usize> = MSL<[T; N], T>;
-
-macro_rules! impl_sl_conv {
-    ($ft: ty) => {
-        impl From<BSL<$ft>> for MSL1d<$ft, 2> {
-            fn from(value: BSL<$ft>) -> Self {
-                MSL1d::new_unchecked(
-                    [value.belief, value.disbelief],
-                    value.uncertainty,
-                    [value.base_rate, 1.0 - value.base_rate],
-                )
-            }
-        }
-
-        impl From<&BSL<$ft>> for MSL1d<$ft, 2> {
-            fn from(value: &BSL<$ft>) -> Self {
-                MSL1d::new_unchecked(
-                    [value.belief, value.disbelief],
-                    value.uncertainty,
-                    [value.base_rate, 1.0 - value.base_rate],
-                )
-            }
-        }
-
-        impl From<MSL1d<$ft, 2>> for BSL<$ft> {
-            fn from(value: MSL1d<$ft, 2>) -> Self {
-                BSL::<$ft>::new_unchecked(
-                    value.belief[0],
-                    value.belief[1],
-                    value.uncertainty,
-                    value.base_rate[0],
-                )
-            }
-        }
-
-        impl From<&MSL1d<$ft, 2>> for BSL<$ft> {
-            fn from(value: &MSL1d<$ft, 2>) -> Self {
-                BSL::<$ft>::new_unchecked(
-                    value.belief[0],
-                    value.belief[1],
-                    value.uncertainty,
-                    value.base_rate[0],
-                )
-            }
-        }
-    };
-}
-
-impl_sl_conv!(f32);
-impl_sl_conv!(f64);
-
-pub trait MSLOps<Rhs, U> {
+pub trait MOperator<Rhs, U> {
     type Output;
 
     /// deduction
     fn ded(&self, wyx: &Rhs, ay: U) -> Self::Output;
 }
 
+pub type MOpinion1d<T, const N: usize> = MOpinion<[T; N], T>;
+
 macro_rules! impl_msl {
     ($ft: ty) => {
-        impl<const N: usize> MSL1d<$ft, N> {
+        impl<const N: usize> MOpinion1d<$ft, N> {
             pub fn try_new(b: [$ft; N], u: $ft, a: [$ft; N]) -> Result<Self, InvalidRangeError> {
                 if !(b.iter().sum::<$ft>() + u).approx_eq(1.0) {
                     return Err(InvalidRangeError(
@@ -414,18 +365,18 @@ macro_rules! impl_msl {
             }
         }
 
-        impl<T: Index<usize, Output = $ft>> MSL<T, $ft> {
+        impl<T: Index<usize, Output = $ft>> MOpinion<T, $ft> {
             pub fn projection(&self, idx: usize) -> $ft {
                 self.belief[idx] + self.base_rate[idx] * self.uncertainty
             }
         }
 
-        impl<const N: usize, const M: usize> MSLOps<[MSL1d<$ft, M>; N], [$ft; M]>
-            for MSL1d<$ft, N>
+        impl<const N: usize, const M: usize> MOperator<[MOpinion1d<$ft, M>; N], [$ft; M]>
+            for MOpinion1d<$ft, N>
         {
-            type Output = MSL1d<$ft, M>;
+            type Output = MOpinion1d<$ft, M>;
 
-            fn ded(&self, wyx: &[MSL1d<$ft, M>; N], ay: [$ft; M]) -> Self::Output {
+            fn ded(&self, wyx: &[MOpinion1d<$ft, M>; N], ay: [$ft; M]) -> Self::Output {
                 assert!(N > 0 && M > 1, "N > 0 and M > 1 must hold.");
                 let eyhx: [$ft; M] = array::from_fn(|t| {
                     (0..N)
@@ -485,16 +436,7 @@ macro_rules! impl_msl {
                         .sum::<$ft>()
                         - ay[j] * u
                 });
-                MSL1d::<$ft, M>::new(b, u, ay)
-            }
-        }
-
-        impl<const N: usize> MSLOps<[BSL<$ft>; N], $ft> for MSL1d<$ft, N> {
-            type Output = BSL<$ft>;
-
-            fn ded(&self, wyx: &[BSL<$ft>; N], ay: $ft) -> Self::Output {
-                let wyx: [MSL1d<$ft, 2>; N] = array::from_fn(|i| (&wyx[i]).into());
-                self.ded(&wyx, [ay, 1.0 - ay]).into()
+                MOpinion1d::<$ft, M>::new(b, u, ay)
             }
         }
     };
@@ -503,43 +445,101 @@ macro_rules! impl_msl {
 impl_msl!(f32);
 impl_msl!(f64);
 
+macro_rules! impl_sl_conv {
+    ($ft: ty) => {
+        impl From<BOpinion<$ft>> for MOpinion1d<$ft, 2> {
+            fn from(value: BOpinion<$ft>) -> Self {
+                MOpinion1d::new_unchecked(
+                    [value.belief, value.disbelief],
+                    value.uncertainty,
+                    [value.base_rate, 1.0 - value.base_rate],
+                )
+            }
+        }
+
+        impl From<&BOpinion<$ft>> for MOpinion1d<$ft, 2> {
+            fn from(value: &BOpinion<$ft>) -> Self {
+                MOpinion1d::new_unchecked(
+                    [value.belief, value.disbelief],
+                    value.uncertainty,
+                    [value.base_rate, 1.0 - value.base_rate],
+                )
+            }
+        }
+
+        impl From<MOpinion1d<$ft, 2>> for BOpinion<$ft> {
+            fn from(value: MOpinion1d<$ft, 2>) -> Self {
+                BOpinion::<$ft>::new_unchecked(
+                    value.belief[0],
+                    value.belief[1],
+                    value.uncertainty,
+                    value.base_rate[0],
+                )
+            }
+        }
+
+        impl From<&MOpinion1d<$ft, 2>> for BOpinion<$ft> {
+            fn from(value: &MOpinion1d<$ft, 2>) -> Self {
+                BOpinion::<$ft>::new_unchecked(
+                    value.belief[0],
+                    value.belief[1],
+                    value.uncertainty,
+                    value.base_rate[0],
+                )
+            }
+        }
+
+        impl<const N: usize> MOperator<[BOpinion<$ft>; N], $ft> for MOpinion1d<$ft, N> {
+            type Output = BOpinion<$ft>;
+
+            fn ded(&self, wyx: &[BOpinion<$ft>; N], ay: $ft) -> Self::Output {
+                let wyx: [MOpinion1d<$ft, 2>; N] = array::from_fn(|i| (&wyx[i]).into());
+                self.ded(&wyx, [ay, 1.0 - ay]).into()
+            }
+        }
+    };
+}
+
+impl_sl_conv!(f32);
+impl_sl_conv!(f64);
+
 #[cfg(test)]
 mod tests {
-    use crate::{BSLOps, MSL1d, MSLOps, BSL};
+    use crate::{BOperator, BOpinion, MOperator, MOpinion1d};
 
     #[test]
     fn test_bsl_boundary() {
         macro_rules! def {
             ($ft: ty) => {
-                assert!(BSL::<$ft>::try_new(1.0, 0.0, 0.0, 0.0).is_ok());
-                assert!(BSL::<$ft>::try_new(0.0, 1.0, 0.0, 1.0).is_ok());
-                assert!(BSL::<$ft>::try_new(0.0, 0.0, 1.0, 0.0).is_ok());
-                assert!(BSL::<$ft>::try_new(1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0, 0.0).is_ok());
-                assert!(BSL::<$ft>::try_new(0.5, 0.5, 0.0, 0.0).is_ok());
-                assert!(BSL::<$ft>::try_new(0.0, 0.5, 0.5, 0.0).is_ok());
-                assert!(BSL::<$ft>::try_new(0.5, 0.0, 0.5, 0.0).is_ok());
-                assert!(BSL::<$ft>::try_new(-0.1, 0.1, 1.0, 0.0)
+                assert!(BOpinion::<$ft>::try_new(1.0, 0.0, 0.0, 0.0).is_ok());
+                assert!(BOpinion::<$ft>::try_new(0.0, 1.0, 0.0, 1.0).is_ok());
+                assert!(BOpinion::<$ft>::try_new(0.0, 0.0, 1.0, 0.0).is_ok());
+                assert!(BOpinion::<$ft>::try_new(1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0, 0.0).is_ok());
+                assert!(BOpinion::<$ft>::try_new(0.5, 0.5, 0.0, 0.0).is_ok());
+                assert!(BOpinion::<$ft>::try_new(0.0, 0.5, 0.5, 0.0).is_ok());
+                assert!(BOpinion::<$ft>::try_new(0.5, 0.0, 0.5, 0.0).is_ok());
+                assert!(BOpinion::<$ft>::try_new(-0.1, 0.1, 1.0, 0.0)
                     .map_err(|e| println!("{e}"))
                     .is_err());
-                assert!(BSL::<$ft>::try_new(1.1, -0.1, 0.0, 0.0)
+                assert!(BOpinion::<$ft>::try_new(1.1, -0.1, 0.0, 0.0)
                     .map_err(|e| println!("{e}"))
                     .is_err());
-                assert!(BSL::<$ft>::try_new(1.0, -0.1, 0.1, 0.0)
+                assert!(BOpinion::<$ft>::try_new(1.0, -0.1, 0.1, 0.0)
                     .map_err(|e| println!("{e}"))
                     .is_err());
-                assert!(BSL::<$ft>::try_new(0.0, 1.1, -0.1, 0.0)
+                assert!(BOpinion::<$ft>::try_new(0.0, 1.1, -0.1, 0.0)
                     .map_err(|e| println!("{e}"))
                     .is_err());
-                assert!(BSL::<$ft>::try_new(1.0, 0.1, -0.1, 0.0)
+                assert!(BOpinion::<$ft>::try_new(1.0, 0.1, -0.1, 0.0)
                     .map_err(|e| println!("{e}"))
                     .is_err());
-                assert!(BSL::<$ft>::try_new(1.0, 0.0, 0.0, -0.1)
+                assert!(BOpinion::<$ft>::try_new(1.0, 0.0, 0.0, -0.1)
                     .map_err(|e| println!("{e}"))
                     .is_err());
-                assert!(BSL::<$ft>::try_new(1.0, 0.0, 0.0, 1.1)
+                assert!(BOpinion::<$ft>::try_new(1.0, 0.0, 0.0, 1.1)
                     .map_err(|e| println!("{e}"))
                     .is_err());
-                assert!(BSL::<$ft>::try_new(0.5, 0.5, 0.5, 0.0)
+                assert!(BOpinion::<$ft>::try_new(0.5, 0.5, 0.5, 0.0)
                     .map_err(|e| println!("{e}"))
                     .is_err());
             };
@@ -553,18 +553,18 @@ mod tests {
     fn test_msl_boundary() {
         macro_rules! def {
             ($ft: ty) => {
-                assert!(MSL1d::<$ft, 2>::try_new([0.0, 0.0], 1.0, [0.0, 1.0]).is_ok());
-                assert!(MSL1d::<$ft, 2>::try_new([0.0, 1.0], 0.0, [0.0, 1.0]).is_ok());
-                assert!(MSL1d::<$ft, 2>::try_new([0.1, -0.1], 1.0, [0.0, 1.0])
+                assert!(MOpinion1d::<$ft, 2>::try_new([0.0, 0.0], 1.0, [0.0, 1.0]).is_ok());
+                assert!(MOpinion1d::<$ft, 2>::try_new([0.0, 1.0], 0.0, [0.0, 1.0]).is_ok());
+                assert!(MOpinion1d::<$ft, 2>::try_new([0.1, -0.1], 1.0, [0.0, 1.0])
                     .map_err(|e| println!("{e}"))
                     .is_err());
-                assert!(MSL1d::<$ft, 2>::try_new([0.0, 1.0], 0.0, [1.1, -0.1])
+                assert!(MOpinion1d::<$ft, 2>::try_new([0.0, 1.0], 0.0, [1.1, -0.1])
                     .map_err(|e| println!("{e}"))
                     .is_err());
-                assert!(MSL1d::<$ft, 2>::try_new([0.0, -1.0], 2.0, [1.1, -0.1])
+                assert!(MOpinion1d::<$ft, 2>::try_new([0.0, -1.0], 2.0, [1.1, -0.1])
                     .map_err(|e| println!("{e}"))
                     .is_err());
-                assert!(MSL1d::<$ft, 2>::try_new([1.0, 1.0], -1.0, [1.1, -0.1])
+                assert!(MOpinion1d::<$ft, 2>::try_new([1.0, 1.0], -1.0, [1.1, -0.1])
                     .map_err(|e| println!("{e}"))
                     .is_err());
             };
@@ -575,14 +575,14 @@ mod tests {
 
     #[test]
     fn test_bsl_deduction() {
-        let wytx = BSL::<f32>::new(0.90, 0.02, 0.08, 0.5);
-        let wyfx = BSL::<f32>::new(0.40, 0.52, 0.08, 0.5);
-        let wx = BSL::<f32>::new(0.00, 0.38, 0.62, 0.5);
+        let wytx = BOpinion::<f32>::new(0.90, 0.02, 0.08, 0.5);
+        let wyfx = BOpinion::<f32>::new(0.40, 0.52, 0.08, 0.5);
+        let wx = BOpinion::<f32>::new(0.00, 0.38, 0.62, 0.5);
         println!("{}", wx.ded(&wytx, &wyfx, 0.5));
 
-        let wytx = BSL::<f32>::new(0.72, 0.18, 0.1, 0.5);
-        let wyfx = BSL::<f32>::new(0.13, 0.57, 0.3, 0.5);
-        let wx = BSL::<f32>::new(0.7, 0.0, 0.3, 0.33);
+        let wytx = BOpinion::<f32>::new(0.72, 0.18, 0.1, 0.5);
+        let wyfx = BOpinion::<f32>::new(0.13, 0.57, 0.3, 0.5);
+        let wx = BOpinion::<f32>::new(0.7, 0.0, 0.3, 0.33);
         println!("{}", wx.ded(&wytx, &wyfx, 0.5));
     }
 
@@ -590,11 +590,11 @@ mod tests {
     fn test_deduction() {
         let b_a = 1.0;
         let b_xa = 0.0;
-        let wa = MSL1d::<f32, 3>::new([b_a, 0.0, 0.0], 1.0 - b_a, [0.25, 0.25, 0.5]);
+        let wa = MOpinion1d::<f32, 3>::new([b_a, 0.0, 0.0], 1.0 - b_a, [0.25, 0.25, 0.5]);
         let wxa = [
-            BSL::<f32>::new(b_xa, 0.0, 1.0 - b_xa, 0.5),
-            BSL::<f32>::new(0.0, 0.0, 1.0, 0.5),
-            BSL::<f32>::new(0.0, 0.0, 1.0, 0.5),
+            BOpinion::<f32>::new(b_xa, 0.0, 1.0 - b_xa, 0.5),
+            BOpinion::<f32>::new(0.0, 0.0, 1.0, 0.5),
+            BOpinion::<f32>::new(0.0, 0.0, 1.0, 0.5),
         ];
         println!("{}", wxa[0]);
         let x = wa.ded(&wxa, 0.5);
@@ -603,50 +603,50 @@ mod tests {
 
     #[test]
     fn test_deduction1() {
-        let wx = BSL::<f32>::new(0.7, 0.0, 0.3, 1.0 / 3.0);
-        let wytx = BSL::<f32>::new(0.72, 0.18, 0.1, 0.5);
-        let wyfx = BSL::<f32>::new(0.13, 0.57, 0.3, 0.5);
+        let wx = BOpinion::<f32>::new(0.7, 0.0, 0.3, 1.0 / 3.0);
+        let wytx = BOpinion::<f32>::new(0.72, 0.18, 0.1, 0.5);
+        let wyfx = BOpinion::<f32>::new(0.13, 0.57, 0.3, 0.5);
         println!("{}", wx.ded(&wytx, &wyfx, 0.5));
 
-        let wx = MSL1d::<f32, 2>::new([0.7, 0.0], 0.3, [1.0 / 3.0, 2.0 / 3.0]);
+        let wx = MOpinion1d::<f32, 2>::new([0.7, 0.0], 0.3, [1.0 / 3.0, 2.0 / 3.0]);
         let wyx = [
-            MSL1d::<f32, 2>::new([0.72, 0.18], 0.1, [0.5, 0.5]),
-            MSL1d::<f32, 2>::new([0.13, 0.57], 0.3, [0.5, 0.5]),
+            MOpinion1d::<f32, 2>::new([0.72, 0.18], 0.1, [0.5, 0.5]),
+            MOpinion1d::<f32, 2>::new([0.13, 0.57], 0.3, [0.5, 0.5]),
         ];
         println!("{:?}", wx.ded(&wyx, [0.5, 0.5]));
     }
 
     #[test]
     fn test_deduction2() {
-        let wa = MSL1d::<f32, 3>::new([0.7, 0.1, 0.0], 0.2, [0.3, 0.3, 0.4]);
+        let wa = MOpinion1d::<f32, 3>::new([0.7, 0.1, 0.0], 0.2, [0.3, 0.3, 0.4]);
         let wxa = [
-            BSL::<f32>::new(0.7, 0.0, 0.3, 0.5),
-            BSL::<f32>::new(0.0, 0.7, 0.3, 0.5),
-            BSL::<f32>::new(0.0, 0.0, 1.0, 0.5),
+            BOpinion::<f32>::new(0.7, 0.0, 0.3, 0.5),
+            BOpinion::<f32>::new(0.0, 0.7, 0.3, 0.5),
+            BOpinion::<f32>::new(0.0, 0.0, 1.0, 0.5),
         ];
         let wx = wa.ded(&wxa, 0.5);
         println!("{}|{}", wx, wx.projection());
 
         let wxa = [
-            MSL1d::<f32, 2>::new([0.7, 0.0], 0.3, [0.5, 0.5]),
-            MSL1d::<f32, 2>::new([0.0, 0.7], 0.3, [0.5, 0.5]),
-            MSL1d::<f32, 2>::new([0.0, 0.0], 1.0, [0.5, 0.5]),
+            MOpinion1d::<f32, 2>::new([0.7, 0.0], 0.3, [0.5, 0.5]),
+            MOpinion1d::<f32, 2>::new([0.0, 0.7], 0.3, [0.5, 0.5]),
+            MOpinion1d::<f32, 2>::new([0.0, 0.0], 1.0, [0.5, 0.5]),
         ];
         let wx = wa.ded(&wxa, [0.5, 0.5]);
         println!("{:?}|{}", wx, wx.projection(0));
 
-        let wa = BSL::<f32>::new(0.7, 0.1, 0.2, 0.5);
-        let wxta = BSL::<f32>::new(0.7, 0.0, 0.3, 0.5);
-        let wxfa = BSL::<f32>::new(0.0, 0.7, 0.3, 0.5);
+        let wa = BOpinion::<f32>::new(0.7, 0.1, 0.2, 0.5);
+        let wxta = BOpinion::<f32>::new(0.7, 0.0, 0.3, 0.5);
+        let wxfa = BOpinion::<f32>::new(0.0, 0.7, 0.3, 0.5);
         println!("{}", wa.ded(&wxta, &wxfa, 0.5));
     }
 
     #[test]
     fn test_deduction3() {
-        let wa = MSL1d::<f32, 2>::new([0.7, 0.1], 0.2, [0.5, 0.5]);
+        let wa = MOpinion1d::<f32, 2>::new([0.7, 0.1], 0.2, [0.5, 0.5]);
         let wxa = [
-            MSL1d::<f32, 3>::new([0.7, 0.0, 0.0], 0.3, [0.3, 0.3, 0.4]),
-            MSL1d::<f32, 3>::new([0.0, 0.7, 0.0], 0.3, [0.3, 0.3, 0.4]),
+            MOpinion1d::<f32, 3>::new([0.7, 0.0, 0.0], 0.3, [0.3, 0.3, 0.4]),
+            MOpinion1d::<f32, 3>::new([0.0, 0.7, 0.0], 0.3, [0.3, 0.3, 0.4]),
         ];
         let wx = wa.ded(&wxa, [0.3, 0.3, 0.4]);
         println!("{:?}|{}", wx, wx.projection(0));
@@ -655,11 +655,11 @@ mod tests {
     #[test]
     fn test_msl_deduction() {
         let a = [0.7, 0.2, 0.1];
-        let wx = MSL1d::<f32, 3>::new([0.0, 0.5, 0.5], 0.0, a.clone());
+        let wx = MOpinion1d::<f32, 3>::new([0.0, 0.5, 0.5], 0.0, a.clone());
         let wyx = [
-            MSL1d::<f32, 3>::new([1.0, 0.00, 0.00], 0.00, a.clone()),
-            MSL1d::<f32, 3>::new([0.0, 0.17, 0.00], 0.83, a.clone()),
-            MSL1d::<f32, 3>::new([0.0, 0.14, 0.14], 0.72, a.clone()),
+            MOpinion1d::<f32, 3>::new([1.0, 0.00, 0.00], 0.00, a.clone()),
+            MOpinion1d::<f32, 3>::new([0.0, 0.17, 0.00], 0.83, a.clone()),
+            MOpinion1d::<f32, 3>::new([0.0, 0.14, 0.14], 0.72, a.clone()),
         ];
         println!("{:?}", wx.ded(&wyx, a))
     }
