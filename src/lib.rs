@@ -1,10 +1,9 @@
 //!
-//! 本クレートは Subjective Logicの実装です。
-//!
+//! An implementation of [Subjective Logic](https://en.wikipedia.org/wiki/Subjective_logic).
+
 use std::{array, fmt::Display, ops::Index};
 
-#[cfg_attr(doc, katexit::katexit)]
-/// Binomial opinion
+/// A binomial opinion.
 #[derive(Debug)]
 pub struct BOpinion<T> {
     belief: T,
@@ -23,44 +22,48 @@ impl<T: Display> Display for BOpinion<T> {
     }
 }
 
-pub trait BOperator<T> {
-    /// deduction
-    fn ded(&self, ytx: &Self, yfx: &Self, ay: T) -> Self;
+impl<T> BOpinion<T> {
+    fn new_unchecked(b: T, d: T, u: T, a: T) -> Self {
+        Self {
+            belief: b,
+            disbelief: d,
+            uncertainty: u,
+            base_rate: a,
+        }
+    }
 }
 
 macro_rules! impl_bsl {
     ($ft: ty) => {
         impl BOpinion<$ft> {
-            pub fn new_unchecked(b: $ft, d: $ft, u: $ft, a: $ft) -> Self {
-                Self {
-                    belief: b,
-                    disbelief: d,
-                    uncertainty: u,
-                    base_rate: a,
-                }
-            }
-
-            pub fn new(b: $ft, d: $ft, u: $ft, a: $ft) -> Self {
-                Self::try_new(b, d, u, a).unwrap()
-            }
-
-            pub fn try_new(b: $ft, d: $ft, u: $ft, a: $ft) -> Result<Self, InvalidRangeError> {
+            /// Creates a new binomial opinion from parameters, which must satisfy the following conditions:
+            /// $$
+            /// \begin{aligned}
+            /// \mathsf b + \mathsf d + \mathsf u \&= 1\quad\text{where }
+            /// \mathsf b \in [0, 1], \mathsf u \in [0, 1],\\\\
+            /// \mathsf a \in [0, 1].
+            /// \end{aligned}
+            /// $$
+            ///
+            /// # Errors
+            /// If even pameter does not satisfy the conditions, an error is returned.
+            pub fn try_new(b: $ft, d: $ft, u: $ft, a: $ft) -> Result<Self, InvalidValueError> {
                 if !(b + d + u).approx_eq(1.0) {
-                    return Err(InvalidRangeError(
+                    return Err(InvalidValueError(
                         "b + d + u = 1 is not satisfied".to_string(),
                     ));
                 }
                 if !b.is_in_range(0.0, 1.0) {
-                    return Err(InvalidRangeError("b ∈ [0,1] is not satisfied".to_string()));
+                    return Err(InvalidValueError("b ∈ [0,1] is not satisfied".to_string()));
                 }
                 if !d.is_in_range(0.0, 1.0) {
-                    return Err(InvalidRangeError("d ∈ [0,1] is not satisfied".to_string()));
+                    return Err(InvalidValueError("d ∈ [0,1] is not satisfied".to_string()));
                 }
                 if !u.is_in_range(0.0, 1.0) {
-                    return Err(InvalidRangeError("u ∈ [0,1] is not satisfied".to_string()));
+                    return Err(InvalidValueError("u ∈ [0,1] is not satisfied".to_string()));
                 }
                 if !a.is_in_range(0.0, 1.0) {
-                    return Err(InvalidRangeError("a ∈ [0,1] is not satisfied".to_string()));
+                    return Err(InvalidValueError("a ∈ [0,1] is not satisfied".to_string()));
                 }
                 Ok(Self {
                     belief: b,
@@ -70,17 +73,21 @@ macro_rules! impl_bsl {
                 })
             }
 
+            /// Creates a new binomial opinion from parameters which reqiure the same conditions as `try_new`.
+            ///
+            /// # Panics
+            /// Panics if even pameter does not satisfy the conditions.
+            pub fn new(b: $ft, d: $ft, u: $ft, a: $ft) -> Self {
+                Self::try_new(b, d, u, a).unwrap()
+            }
+
+            /// The probability projection of `self`.
             pub fn projection(&self) -> $ft {
                 self.belief + self.base_rate * self.uncertainty
             }
 
-            pub fn op_projection(&self) -> $ft {
-                self.belief + self.base_rate * (1.0 - self.uncertainty)
-            }
-        }
-
-        impl Operator for BOpinion<$ft> {
-            fn mul(&self, rhs: &Self) -> Self {
+            /// Computes the opinion on the logical conjunction of `self` and `rhs`.
+            pub fn mul(&self, rhs: &Self) -> Self {
                 let a = self.base_rate * rhs.base_rate;
                 let b = self.belief * rhs.belief
                     + ((1.0 - self.base_rate) * rhs.base_rate * self.belief * rhs.uncertainty
@@ -94,7 +101,8 @@ macro_rules! impl_bsl {
                 Self::new(b, d, u, a)
             }
 
-            fn comul(&self, rhs: &Self) -> Self {
+            /// Computes the opinion on the logical disjunction of `self` and `rhs`.
+            pub fn comul(&self, rhs: &Self) -> Self {
                 let a = self.base_rate + rhs.base_rate - self.base_rate * rhs.base_rate;
                 let b = self.belief + rhs.belief - self.belief * rhs.belief;
                 let d = self.disbelief * rhs.disbelief
@@ -111,7 +119,8 @@ macro_rules! impl_bsl {
                 Self::new(b, d, u, a)
             }
 
-            fn cfus(&self, rhs: &Self) -> Option<Self> {
+            /// Computes the cumulative fusion of `self` and `rhs`.
+            pub fn cfuse(&self, rhs: &Self) -> Option<Self> {
                 let uu = self.uncertainty * rhs.uncertainty;
                 let kappa = self.uncertainty + rhs.uncertainty - uu;
                 let b = (self.belief * rhs.uncertainty + rhs.belief * self.uncertainty) / kappa;
@@ -123,10 +132,9 @@ macro_rules! impl_bsl {
                     / (kappa - uu);
                 Self::try_new(b, d, u, a).ok()
             }
-        }
 
-        impl BOperator<$ft> for BOpinion<$ft> {
-            fn ded(&self, ytx: &Self, yfx: &Self, ay: $ft) -> Self {
+            /// Computes the conditionally deduced opinion of `self` by two conditional opinions `ytx` and `yfx`.
+            pub fn deduce(&self, ytx: &Self, yfx: &Self, ay: $ft) -> Self {
                 let rvax = (1.0 - self.base_rate);
                 let bi = self.belief * ytx.belief
                     + self.disbelief * yfx.belief
@@ -208,10 +216,9 @@ macro_rules! impl_bsl {
                 let a = ay;
                 Self::new(b, d, u, a)
             }
-        }
 
-        impl Transitivity<$ft> for BOpinion<$ft> {
-            fn unc(&self, b: $ft) -> Self {
+            /// Computes the uncertainty favouring discounted opinion.
+            pub fn trans_unc(&self, b: $ft) -> Self {
                 assert!(b.is_in_range(0.0, 1.0), "b ∈ [0,1] is not satisfied.");
                 Self::new(
                     b * self.belief,
@@ -220,7 +227,9 @@ macro_rules! impl_bsl {
                     self.base_rate,
                 )
             }
-            fn opp(&self, b: $ft, d: $ft) -> Self {
+
+            /// Computes the opposite belief favouring discounted opinion.
+            pub fn trans_opp(&self, b: $ft, d: $ft) -> Self {
                 let u = 1.0 - b - d;
                 assert!(u.is_in_range(0.0, 1.0), "b + d ∈ [0,1] is not satisfied.");
                 Self::new(
@@ -230,7 +239,9 @@ macro_rules! impl_bsl {
                     self.base_rate,
                 )
             }
-            fn bsr(&self, ev: $ft) -> Self {
+
+            /// Computes base rate sensitive discounted opinion.
+            pub fn trans_bsr(&self, ev: $ft) -> Self {
                 assert!(ev.is_in_range(0.0, 1.0), "ev ∈ [0,1] is not satisfied.");
                 Self::new(
                     ev * self.belief,
@@ -246,52 +257,7 @@ macro_rules! impl_bsl {
 impl_bsl!(f32);
 impl_bsl!(f64);
 
-pub trait Operator {
-    /// multiplication
-    fn mul(&self, rhs: &Self) -> Self;
-    /// comultiplication
-    fn comul(&self, rhs: &Self) -> Self;
-    /// cumulative fusion
-    fn cfus(&self, rhs: &Self) -> Option<Self>
-    where
-        Self: Sized;
-}
-
-pub trait Transitivity<T> {
-    /// uncertainty favouring
-    fn unc(&self, b: T) -> Self;
-    /// opposite belief favouring
-    fn opp(&self, b: T, d: T) -> Self;
-    /// base rate sensitive
-    fn bsr(&self, ev: T) -> Self;
-}
-
-#[derive(thiserror::Error, Debug)]
-#[error("At least one parameter is invalid because {0}.")]
-pub struct InvalidRangeError(String);
-
-trait EpsilonComp {
-    fn is_in_range(self, from: Self, to: Self) -> bool;
-    fn approx_eq(self, to: Self) -> bool;
-}
-
-macro_rules! impl_epsilon_comp {
-    ($ft: ty) => {
-        impl EpsilonComp for $ft {
-            fn is_in_range(self, from: Self, to: Self) -> bool {
-                self >= from - <$ft>::EPSILON && self <= to + <$ft>::EPSILON
-            }
-
-            fn approx_eq(self, to: Self) -> bool {
-                self >= to - <$ft>::EPSILON && self <= to + <$ft>::EPSILON
-            }
-        }
-    };
-}
-
-impl_epsilon_comp!(f32);
-impl_epsilon_comp!(f64);
-
+/// The generlized structure of a multinomial opinion.
 #[derive(Debug)]
 pub struct MOpinion<T, U> {
     belief: T,
@@ -306,7 +272,7 @@ impl<T: Display, U: Display> Display for MOpinion<T, U> {
 }
 
 impl<T, U> MOpinion<T, U> {
-    pub fn new_unchecked(b: T, u: U, a: T) -> Self {
+    fn new_unchecked(b: T, u: U, a: T) -> Self {
         Self {
             belief: b,
             uncertainty: u,
@@ -315,40 +281,54 @@ impl<T, U> MOpinion<T, U> {
     }
 }
 
-pub trait MOperator<Rhs, U> {
+/// The deduction operator.
+pub trait Deduction<Rhs, U> {
     type Output;
 
-    /// deduction
-    fn ded(&self, wyx: &Rhs, ay: U) -> Self::Output;
+    /// Computes the conditionally deduced opinion of `self` with a base rate vector `ay` by `wyx` representing a collection of conditional opinions.
+    fn deduce(&self, wyx: &Rhs, ay: U) -> Self::Output;
 }
 
+/// A multinomial opinion with 1-dimensional vectors.
 pub type MOpinion1d<T, const N: usize> = MOpinion<[T; N], T>;
 
 macro_rules! impl_msl {
     ($ft: ty) => {
         impl<const N: usize> MOpinion1d<$ft, N> {
-            pub fn try_new(b: [$ft; N], u: $ft, a: [$ft; N]) -> Result<Self, InvalidRangeError> {
+            /// Creates a new binomial opinion from parameters, which must satisfy the following conditions:
+            /// $$
+            /// \begin{aligned}
+            /// \sum_{i=0}^{\mathsf N-1}\mathsf b\[i\] + \mathsf u \&= 1\quad\text{where }
+            /// \mathsf b \in [0, 1]^\mathsf N, \mathsf u \in [0, 1],\\\\
+            /// \sum_{i=0}^{\mathsf N-1}\mathsf a\[i\] \&= 1\quad\text{where }
+            /// \mathsf u \in [0, 1].
+            /// \end{aligned}
+            /// $$
+            ///
+            /// # Errors
+            /// If even pameter does not satisfy the conditions, an error is returned.
+            pub fn try_new(b: [$ft; N], u: $ft, a: [$ft; N]) -> Result<Self, InvalidValueError> {
                 if !(b.iter().sum::<$ft>() + u).approx_eq(1.0) {
-                    return Err(InvalidRangeError(
+                    return Err(InvalidValueError(
                         "sum(b) + u = 1 is not satisfied".to_string(),
                     ));
                 }
                 if !a.iter().sum::<$ft>().approx_eq(1.0) {
-                    return Err(InvalidRangeError("sum(a) = 1 is not satisfied".to_string()));
+                    return Err(InvalidValueError("sum(a) = 1 is not satisfied".to_string()));
                 }
 
                 if !u.is_in_range(0.0, 1.0) {
-                    return Err(InvalidRangeError(format!("u ∈ [0,1] is not satisfied")));
+                    return Err(InvalidValueError(format!("u ∈ [0,1] is not satisfied")));
                 }
 
                 for i in 0..N {
                     if !b[i].is_in_range(0.0, 1.0) {
-                        return Err(InvalidRangeError(format!(
+                        return Err(InvalidValueError(format!(
                             "b[{i}] ∈ [0,1] is not satisfied"
                         )));
                     }
                     if !a[i].is_in_range(0.0, 1.0) {
-                        return Err(InvalidRangeError(format!(
+                        return Err(InvalidValueError(format!(
                             "a[{i}] ∈ [0,1] is not satisfied"
                         )));
                     }
@@ -360,23 +340,28 @@ macro_rules! impl_msl {
                 })
             }
 
+            /// Creates a new binomial opinion from parameters which reqiure the same conditions as `try_new`.
+            ///
+            /// # Panics
+            /// Panics if even pameter does not satisfy the conditions.
             pub fn new(b: [$ft; N], u: $ft, a: [$ft; N]) -> Self {
                 Self::try_new(b, u, a).unwrap()
             }
         }
 
+        /// The probability projection of `self`.
         impl<T: Index<usize, Output = $ft>> MOpinion<T, $ft> {
             pub fn projection(&self, idx: usize) -> $ft {
                 self.belief[idx] + self.base_rate[idx] * self.uncertainty
             }
         }
 
-        impl<const N: usize, const M: usize> MOperator<[MOpinion1d<$ft, M>; N], [$ft; M]>
+        impl<const N: usize, const M: usize> Deduction<[MOpinion1d<$ft, M>; N], [$ft; M]>
             for MOpinion1d<$ft, N>
         {
             type Output = MOpinion1d<$ft, M>;
 
-            fn ded(&self, wyx: &[MOpinion1d<$ft, M>; N], ay: [$ft; M]) -> Self::Output {
+            fn deduce(&self, wyx: &[MOpinion1d<$ft, M>; N], ay: [$ft; M]) -> Self::Output {
                 assert!(N > 0 && M > 1, "N > 0 and M > 1 must hold.");
                 let eyhx: [$ft; M] = array::from_fn(|t| {
                     (0..N)
@@ -489,12 +474,12 @@ macro_rules! impl_sl_conv {
             }
         }
 
-        impl<const N: usize> MOperator<[BOpinion<$ft>; N], $ft> for MOpinion1d<$ft, N> {
+        impl<const N: usize> Deduction<[BOpinion<$ft>; N], $ft> for MOpinion1d<$ft, N> {
             type Output = BOpinion<$ft>;
 
-            fn ded(&self, wyx: &[BOpinion<$ft>; N], ay: $ft) -> Self::Output {
+            fn deduce(&self, wyx: &[BOpinion<$ft>; N], ay: $ft) -> Self::Output {
                 let wyx: [MOpinion1d<$ft, 2>; N] = array::from_fn(|i| (&wyx[i]).into());
-                self.ded(&wyx, [ay, 1.0 - ay]).into()
+                self.deduce(&wyx, [ay, 1.0 - ay]).into()
             }
         }
     };
@@ -503,9 +488,36 @@ macro_rules! impl_sl_conv {
 impl_sl_conv!(f32);
 impl_sl_conv!(f64);
 
+/// An error indicating that one or more invalid values are used.
+#[derive(thiserror::Error, Debug)]
+#[error("At least one parameter is invalid because {0}.")]
+pub struct InvalidValueError(String);
+
+trait EpsilonComp {
+    fn is_in_range(self, from: Self, to: Self) -> bool;
+    fn approx_eq(self, to: Self) -> bool;
+}
+
+macro_rules! impl_epsilon_comp {
+    ($ft: ty) => {
+        impl EpsilonComp for $ft {
+            fn is_in_range(self, from: Self, to: Self) -> bool {
+                self >= from - <$ft>::EPSILON && self <= to + <$ft>::EPSILON
+            }
+
+            fn approx_eq(self, to: Self) -> bool {
+                self >= to - <$ft>::EPSILON && self <= to + <$ft>::EPSILON
+            }
+        }
+    };
+}
+
+impl_epsilon_comp!(f32);
+impl_epsilon_comp!(f64);
+
 #[cfg(test)]
 mod tests {
-    use crate::{BOperator, BOpinion, MOperator, MOpinion1d};
+    use crate::{BOpinion, Deduction, MOpinion1d};
 
     #[test]
     fn test_bsl_boundary() {
@@ -578,12 +590,12 @@ mod tests {
         let wytx = BOpinion::<f32>::new(0.90, 0.02, 0.08, 0.5);
         let wyfx = BOpinion::<f32>::new(0.40, 0.52, 0.08, 0.5);
         let wx = BOpinion::<f32>::new(0.00, 0.38, 0.62, 0.5);
-        println!("{}", wx.ded(&wytx, &wyfx, 0.5));
+        println!("{}", wx.deduce(&wytx, &wyfx, 0.5));
 
         let wytx = BOpinion::<f32>::new(0.72, 0.18, 0.1, 0.5);
         let wyfx = BOpinion::<f32>::new(0.13, 0.57, 0.3, 0.5);
         let wx = BOpinion::<f32>::new(0.7, 0.0, 0.3, 0.33);
-        println!("{}", wx.ded(&wytx, &wyfx, 0.5));
+        println!("{}", wx.deduce(&wytx, &wyfx, 0.5));
     }
 
     #[test]
@@ -597,7 +609,7 @@ mod tests {
             BOpinion::<f32>::new(0.0, 0.0, 1.0, 0.5),
         ];
         println!("{}", wxa[0]);
-        let x = wa.ded(&wxa, 0.5);
+        let x = wa.deduce(&wxa, 0.5);
         println!("{}", x.projection());
     }
 
@@ -606,14 +618,14 @@ mod tests {
         let wx = BOpinion::<f32>::new(0.7, 0.0, 0.3, 1.0 / 3.0);
         let wytx = BOpinion::<f32>::new(0.72, 0.18, 0.1, 0.5);
         let wyfx = BOpinion::<f32>::new(0.13, 0.57, 0.3, 0.5);
-        println!("{}", wx.ded(&wytx, &wyfx, 0.5));
+        println!("{}", wx.deduce(&wytx, &wyfx, 0.5));
 
         let wx = MOpinion1d::<f32, 2>::new([0.7, 0.0], 0.3, [1.0 / 3.0, 2.0 / 3.0]);
         let wyx = [
             MOpinion1d::<f32, 2>::new([0.72, 0.18], 0.1, [0.5, 0.5]),
             MOpinion1d::<f32, 2>::new([0.13, 0.57], 0.3, [0.5, 0.5]),
         ];
-        println!("{:?}", wx.ded(&wyx, [0.5, 0.5]));
+        println!("{:?}", wx.deduce(&wyx, [0.5, 0.5]));
     }
 
     #[test]
@@ -624,7 +636,7 @@ mod tests {
             BOpinion::<f32>::new(0.0, 0.7, 0.3, 0.5),
             BOpinion::<f32>::new(0.0, 0.0, 1.0, 0.5),
         ];
-        let wx = wa.ded(&wxa, 0.5);
+        let wx = wa.deduce(&wxa, 0.5);
         println!("{}|{}", wx, wx.projection());
 
         let wxa = [
@@ -632,13 +644,13 @@ mod tests {
             MOpinion1d::<f32, 2>::new([0.0, 0.7], 0.3, [0.5, 0.5]),
             MOpinion1d::<f32, 2>::new([0.0, 0.0], 1.0, [0.5, 0.5]),
         ];
-        let wx = wa.ded(&wxa, [0.5, 0.5]);
+        let wx = wa.deduce(&wxa, [0.5, 0.5]);
         println!("{:?}|{}", wx, wx.projection(0));
 
         let wa = BOpinion::<f32>::new(0.7, 0.1, 0.2, 0.5);
         let wxta = BOpinion::<f32>::new(0.7, 0.0, 0.3, 0.5);
         let wxfa = BOpinion::<f32>::new(0.0, 0.7, 0.3, 0.5);
-        println!("{}", wa.ded(&wxta, &wxfa, 0.5));
+        println!("{}", wa.deduce(&wxta, &wxfa, 0.5));
     }
 
     #[test]
@@ -648,7 +660,7 @@ mod tests {
             MOpinion1d::<f32, 3>::new([0.7, 0.0, 0.0], 0.3, [0.3, 0.3, 0.4]),
             MOpinion1d::<f32, 3>::new([0.0, 0.7, 0.0], 0.3, [0.3, 0.3, 0.4]),
         ];
-        let wx = wa.ded(&wxa, [0.3, 0.3, 0.4]);
+        let wx = wa.deduce(&wxa, [0.3, 0.3, 0.4]);
         println!("{:?}|{}", wx, wx.projection(0));
     }
 
@@ -661,6 +673,6 @@ mod tests {
             MOpinion1d::<f32, 3>::new([0.0, 0.17, 0.00], 0.83, a.clone()),
             MOpinion1d::<f32, 3>::new([0.0, 0.14, 0.14], 0.72, a.clone()),
         ];
-        println!("{:?}", wx.ded(&wyx, a))
+        println!("{:?}", wx.deduce(&wyx, a))
     }
 }

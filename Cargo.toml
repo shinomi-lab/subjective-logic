@@ -8,4 +8,6 @@ edition = "2021"
 [dependencies]
 paste = "1.0.12"
 thiserror = "1.0.40"
-katexit = "0.1"
+
+[package.metadata.docs.rs]
+rustdoc-args = ["--html-in-header", "katex.html"]
