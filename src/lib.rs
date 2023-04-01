@@ -287,6 +287,9 @@ pub trait Deduction<Rhs, U> {
 
     /// Computes the conditionally deduced opinion of `self` with a base rate vector `ay` by `wyx` representing a collection of conditional opinions.
     fn deduce(&self, wyx: &Rhs, ay: U) -> Self::Output;
+
+    /// Computes the probability projection of the deduced opinion
+    fn projection(&self, wyx: &Rhs) -> U;
 }
 
 /// A multinomial opinion with 1-dimensional vectors.
@@ -423,6 +426,14 @@ macro_rules! impl_msl {
                 });
                 MOpinion1d::<$ft, M>::new(b, u, ay)
             }
+
+            fn projection(&self, wyx: &[MOpinion1d<$ft, M>; N]) -> [$ft; M] {
+                array::from_fn(|j| {
+                    (0..N)
+                        .map(|i| self.projection(i) * wyx[i].projection(j))
+                        .sum::<$ft>()
+                })
+            }
         }
     };
 }
@@ -480,6 +491,12 @@ macro_rules! impl_sl_conv {
             fn deduce(&self, wyx: &[BOpinion<$ft>; N], ay: $ft) -> Self::Output {
                 let wyx: [MOpinion1d<$ft, 2>; N] = array::from_fn(|i| (&wyx[i]).into());
                 self.deduce(&wyx, [ay, 1.0 - ay]).into()
+            }
+
+            fn projection(&self, wyx: &[BOpinion<$ft>; N]) -> $ft {
+                (0..N)
+                    .map(|i| self.projection(i) * wyx[i].projection())
+                    .sum::<$ft>()
             }
         }
     };
