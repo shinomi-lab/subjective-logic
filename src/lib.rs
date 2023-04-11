@@ -120,17 +120,21 @@ macro_rules! impl_bsl {
             }
 
             /// Computes the cumulative fusion of `self` and `rhs`.
-            pub fn cfuse(&self, rhs: &Self) -> Option<Self> {
+            pub fn cfuse(&self, rhs: &Self) -> Result<Self, InvalidValueError> {
                 let uu = self.uncertainty * rhs.uncertainty;
                 let kappa = self.uncertainty + rhs.uncertainty - uu;
                 let b = (self.belief * rhs.uncertainty + rhs.belief * self.uncertainty) / kappa;
                 let d =
                     (self.disbelief * rhs.uncertainty + rhs.disbelief * self.uncertainty) / kappa;
                 let u = (self.uncertainty * rhs.uncertainty) / kappa;
-                let a = (self.base_rate * rhs.uncertainty + rhs.base_rate * self.uncertainty
-                    - (self.base_rate + rhs.base_rate) * uu)
-                    / (kappa - uu);
-                Self::try_new(b, d, u, a).ok()
+                let a = if self.uncertainty.approx_eq(1.0) && rhs.uncertainty.approx_eq(1.0) {
+                    (self.base_rate + rhs.base_rate) / 2.0
+                } else {
+                    (self.base_rate * rhs.uncertainty + rhs.base_rate * self.uncertainty
+                        - (self.base_rate + rhs.base_rate) * uu)
+                        / (kappa - uu)
+                };
+                Self::try_new(b, d, u, a)
             }
 
             /// Computes the conditionally deduced opinion of `self` by two conditional opinions `ytx` and `yfx`.
@@ -600,6 +604,15 @@ mod tests {
         }
         def!(f32);
         def!(f64);
+    }
+
+    #[test]
+    fn test_cum_fuse() {
+        let w0 = BOpinion::<f32>::new(0.5, 0.0, 0.5, 0.5);
+        let w1 = BOpinion::<f32>::new(0.0, 0.0, 1.0, 0.5);
+        let w2 = BOpinion::<f32>::new(0.0, 0.0, 1.0, 0.5);
+        assert!(w0.cfuse(&w2).is_ok());
+        assert!(w1.cfuse(&w2).is_ok());
     }
 
     #[test]
