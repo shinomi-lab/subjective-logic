@@ -137,6 +137,65 @@ macro_rules! impl_bsl {
                 Self::try_new(b, d, u, a)
             }
 
+            /// Computes the averaging belief fusion of `self` and `rhs`.
+            pub fn afuse(&self, rhs: &Self, gamma_a: $ft) -> Result<Self, InvalidValueError> {
+                let b;
+                let d;
+                let u;
+                let a;
+                if self.uncertainty.approx_eq(0.0) && rhs.uncertainty.approx_eq(0.0) {
+                    let gamma_b = 1.0 - gamma_a;
+                    b = gamma_a * self.belief + gamma_b * rhs.belief;
+                    d = gamma_a * self.disbelief + gamma_b * rhs.disbelief;
+                    u = 0.0;
+                    a = gamma_a * self.base_rate + gamma_b * rhs.base_rate;
+                } else {
+                    let upu = self.uncertainty + rhs.uncertainty;
+                    b = (self.belief * rhs.uncertainty + rhs.belief * self.uncertainty) / upu;
+                    d = (self.disbelief * rhs.uncertainty + rhs.disbelief * self.uncertainty) / upu;
+                    u = 2.0 * self.uncertainty * rhs.uncertainty / upu;
+                    a = (self.base_rate + rhs.base_rate) / 2.0;
+                }
+                Self::try_new(b, d, u, a)
+            }
+
+            /// Computes the weighted belief fusion of `self` and `rhs`.
+            pub fn wfuse(&self, rhs: &Self, gamma_a: $ft) -> Result<Self, InvalidValueError> {
+                let b;
+                let d;
+                let u;
+                let a;
+                if self.uncertainty.approx_eq(0.0) && rhs.uncertainty.approx_eq(0.0) {
+                    let gamma_b = 1.0 - gamma_a;
+                    b = gamma_a * self.belief + gamma_b * rhs.belief;
+                    d = gamma_a * self.disbelief + gamma_b * rhs.disbelief;
+                    u = 0.0;
+                    a = gamma_a * self.base_rate + gamma_b * rhs.base_rate;
+                } else if self.uncertainty.approx_eq(1.0) && rhs.uncertainty.approx_eq(1.0) {
+                    b = 0.0;
+                    d = 0.0;
+                    u = 1.0;
+                    a = (self.base_rate + rhs.base_rate) / 2.0;
+                } else {
+                    let denom = self.uncertainty + rhs.uncertainty
+                        - 2.0 * self.uncertainty * rhs.uncertainty;
+                    let ca = 1.0 - self.uncertainty;
+                    let cb = 1.0 - rhs.uncertainty;
+                    b = (self.belief * ca * rhs.uncertainty + rhs.belief * cb * self.uncertainty)
+                        / denom;
+                    d = (self.disbelief * ca * rhs.uncertainty
+                        + rhs.disbelief * cb * self.uncertainty)
+                        / denom;
+                    u = (2.0 - self.uncertainty - rhs.uncertainty)
+                        * self.uncertainty
+                        * rhs.uncertainty
+                        / denom;
+                    a = (self.base_rate * ca + rhs.base_rate * cb)
+                        / (2.0 - self.uncertainty - rhs.uncertainty);
+                }
+                Self::try_new(b, d, u, a)
+            }
+
             /// Computes the conditionally deduced opinion of `self` by two conditional opinions `ytx` and `yfx`.
             pub fn deduce(&self, ytx: &Self, yfx: &Self, ay: $ft) -> Self {
                 let rvax = (1.0 - self.base_rate);
@@ -354,6 +413,67 @@ macro_rules! impl_msl {
             pub fn new(b: [$ft; N], u: $ft, a: [$ft; N]) -> Self {
                 Self::try_new(b, u, a).unwrap()
             }
+
+            /// Computes the averaging belief fusion of `self` and `rhs`.
+            pub fn afuse(&self, rhs: &Self, gamma_a: $ft) -> Result<Self, InvalidValueError> {
+                let b;
+                let u;
+                let a;
+                if self.uncertainty.approx_eq(0.0) && rhs.uncertainty.approx_eq(0.0) {
+                    let gamma_b = 1.0 - gamma_a;
+                    b = array::from_fn(|i| gamma_a * self.belief[i] + gamma_b * rhs.belief[i]);
+                    u = 0.0;
+                    a = array::from_fn(|i| {
+                        gamma_a * self.base_rate[i] + gamma_b * rhs.base_rate[i]
+                    });
+                } else {
+                    let upu = self.uncertainty + rhs.uncertainty;
+                    b = array::from_fn(|i| {
+                        (self.belief[i] * rhs.uncertainty + rhs.belief[i] * self.uncertainty) / upu
+                    });
+                    u = 2.0 * self.uncertainty * rhs.uncertainty / upu;
+                    a = array::from_fn(|i| (self.base_rate[i] + rhs.base_rate[i]) / 2.0);
+                }
+                Self::try_new(b, u, a)
+            }
+
+            /// Computes the weighted belief fusion of `self` and `rhs`.
+            pub fn wfuse(&self, rhs: &Self, gamma_a: $ft) -> Result<Self, InvalidValueError> {
+                let b;
+                let u;
+                let a;
+                if self.uncertainty.approx_eq(0.0) && rhs.uncertainty.approx_eq(0.0) {
+                    let gamma_b = 1.0 - gamma_a;
+                    b = array::from_fn(|i| gamma_a * self.belief[i] + gamma_b * rhs.belief[i]);
+                    u = 0.0;
+                    a = array::from_fn(|i| {
+                        gamma_a * self.base_rate[i] + gamma_b * rhs.base_rate[i]
+                    });
+                } else if self.uncertainty.approx_eq(1.0) && rhs.uncertainty.approx_eq(1.0) {
+                    b = [0.0; N];
+                    u = 1.0;
+                    a = array::from_fn(|i| (self.base_rate[i] + rhs.base_rate[i]) / 2.0);
+                } else {
+                    let denom = self.uncertainty + rhs.uncertainty
+                        - 2.0 * self.uncertainty * rhs.uncertainty;
+                    let ca = 1.0 - self.uncertainty;
+                    let cb = 1.0 - rhs.uncertainty;
+                    b = array::from_fn(|i| {
+                        (self.belief[i] * ca * rhs.uncertainty
+                            + rhs.belief[i] * cb * self.uncertainty)
+                            / denom
+                    });
+                    u = (2.0 - self.uncertainty - rhs.uncertainty)
+                        * self.uncertainty
+                        * rhs.uncertainty
+                        / denom;
+                    a = array::from_fn(|i| {
+                        (self.base_rate[i] * ca + rhs.base_rate[i] * cb)
+                            / (2.0 - self.uncertainty - rhs.uncertainty)
+                    });
+                }
+                Self::try_new(b, u, a)
+            }
         }
 
         /// The probability projection of `self`.
@@ -514,31 +634,57 @@ impl_sl_conv!(f64);
 #[error("At least one parameter is invalid because {0}.")]
 pub struct InvalidValueError(String);
 
-trait EpsilonComp {
-    fn is_in_range(self, from: Self, to: Self) -> bool;
-    fn approx_eq(self, to: Self) -> bool;
+trait EpsilonRange<T = Self> {
+    fn is_in_range(self, from: T, to: T) -> bool;
 }
 
-macro_rules! impl_epsilon_comp {
+trait EpsilonEq<T = Self> {
+    fn approx_eq(self, to: T) -> bool;
+}
+
+macro_rules! impl_epsilon {
     ($ft: ty) => {
-        impl EpsilonComp for $ft {
+        impl EpsilonRange for $ft {
             fn is_in_range(self, from: Self, to: Self) -> bool {
                 self >= from - <$ft>::EPSILON && self <= to + <$ft>::EPSILON
             }
-
+        }
+        impl EpsilonRange for &$ft {
+            fn is_in_range(self, from: Self, to: Self) -> bool {
+                *self >= *from - <$ft>::EPSILON && *self <= *to + <$ft>::EPSILON
+            }
+        }
+        impl EpsilonEq for $ft {
             fn approx_eq(self, to: Self) -> bool {
                 self >= to - <$ft>::EPSILON && self <= to + <$ft>::EPSILON
+            }
+        }
+        impl EpsilonEq for &$ft {
+            fn approx_eq(self, to: Self) -> bool {
+                *self >= *to - <$ft>::EPSILON && *self <= *to + <$ft>::EPSILON
             }
         }
     };
 }
 
-impl_epsilon_comp!(f32);
-impl_epsilon_comp!(f64);
+impl_epsilon!(f32);
+impl_epsilon!(f64);
+
+impl<T> EpsilonEq for &BOpinion<T>
+where
+    for<'a> &'a T: EpsilonEq,
+{
+    fn approx_eq(self, to: Self) -> bool {
+        self.belief.approx_eq(&to.belief)
+            && self.disbelief.approx_eq(&to.disbelief)
+            && self.uncertainty.approx_eq(&to.uncertainty)
+            && self.base_rate.approx_eq(&to.base_rate)
+    }
+}
 
 #[cfg(test)]
 mod tests {
-    use crate::{BOpinion, Deduction, MOpinion1d};
+    use crate::{BOpinion, Deduction, EpsilonEq, MOpinion1d};
 
     #[test]
     fn test_bsl_boundary() {
@@ -613,6 +759,45 @@ mod tests {
         let w2 = BOpinion::<f32>::new(0.0, 0.0, 1.0, 0.5);
         assert!(w0.cfuse(&w2).is_ok());
         assert!(w1.cfuse(&w2).is_ok());
+    }
+
+    #[test]
+    fn test_avg_fuse() {
+        let w0 = BOpinion::<f32>::new(0.0, 0.0, 1.0, 0.5);
+        let w1 = BOpinion::<f32>::new(0.5, 0.0, 0.5, 0.5);
+        let w2 = BOpinion::<f32>::new(0.0, 0.5, 0.5, 0.5);
+        let w3 = BOpinion::<f32>::new(0.0, 0.6, 0.4, 0.5);
+
+        println!("{}", w0.afuse(&w1, 0.5).unwrap());
+        println!("{}", w1.afuse(&w2, 0.5).unwrap());
+        println!("{}", w1.afuse(&w3, 0.5).unwrap());
+        println!("{}", w2.afuse(&w3, 0.5).unwrap());
+    }
+
+    #[test]
+    fn test_wgt_fuse() {
+        let w0 = BOpinion::<f32>::new(0.0, 0.0, 1.0, 0.5);
+        let w1 = BOpinion::<f32>::new(0.5, 0.0, 0.5, 0.5);
+        let w2 = BOpinion::<f32>::new(0.0, 0.5, 0.5, 0.5);
+        let w3 = BOpinion::<f32>::new(0.0, 0.6, 0.4, 0.5);
+
+        assert!(w1.wfuse(&w0, 0.5).unwrap().approx_eq(&w1));
+        assert!(w2.wfuse(&w0, 0.5).unwrap().approx_eq(&w2));
+        assert!(w3.wfuse(&w0, 0.5).unwrap().approx_eq(&w3));
+
+        assert!(w2.wfuse(&w2, 0.5).unwrap().approx_eq(&w2));
+        assert!(w3.wfuse(&w3, 0.5).unwrap().approx_eq(&w3));
+    }
+
+    #[test]
+    fn test_fusion() {
+        let w1 = BOpinion::<f32>::new(0.5, 0.0, 0.5, 0.5);
+        // let w2 = BOpinion::<f32>::new(0.3, 0.0, 0.7, 0.5);
+        let w2 = BOpinion::<f32>::new(0.0, 0.90, 0.10, 0.5);
+
+        println!("{}", w1.cfuse(&w2).unwrap());
+        println!("{}", w1.afuse(&w2, 0.5).unwrap());
+        println!("{}", w1.wfuse(&w2, 0.5).unwrap());
     }
 
     #[test]
