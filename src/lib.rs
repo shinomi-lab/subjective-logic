@@ -196,80 +196,94 @@ macro_rules! impl_bsl {
                 Self::try_new(b, d, u, a)
             }
 
-            /// Computes the conditionally deduced opinion of `self` by two conditional opinions `ytx` and `yfx`.
-            pub fn deduce(&self, ytx: &Self, yfx: &Self, ay: $ft) -> Self {
+            /// Computes the conditionally deduced opinion of `self` by a two length array of conditional opinions `cond`.
+            /// If `self.uncertainty` is equal to `0.0`, this function panics.
+            pub fn deduce(&self, cond: &[Self; 2], ay: $ft) -> Self {
                 let rvax = (1.0 - self.base_rate);
-                let bi = self.belief * ytx.belief
-                    + self.disbelief * yfx.belief
-                    + self.uncertainty * (ytx.belief * self.base_rate + yfx.belief * rvax);
-                let di = self.belief * ytx.disbelief
-                    + self.disbelief * yfx.disbelief
-                    + self.uncertainty * (ytx.disbelief * self.base_rate + yfx.disbelief * rvax);
-                let ui = self.belief * ytx.uncertainty
-                    + self.disbelief * yfx.uncertainty
+                let bi = self.belief * cond[0].belief
+                    + self.disbelief * cond[1].belief
+                    + self.uncertainty * (cond[0].belief * self.base_rate + cond[1].belief * rvax);
+                let di = self.belief * cond[0].disbelief
+                    + self.disbelief * cond[1].disbelief
                     + self.uncertainty
-                        * (ytx.uncertainty * self.base_rate + yfx.uncertainty * rvax);
-                let k = match (ytx.belief > yfx.belief, ytx.disbelief > yfx.disbelief) {
+                        * (cond[0].disbelief * self.base_rate + cond[1].disbelief * rvax);
+                let ui = self.belief * cond[0].uncertainty
+                    + self.disbelief * cond[1].uncertainty
+                    + self.uncertainty
+                        * (cond[0].uncertainty * self.base_rate + cond[1].uncertainty * rvax);
+                let k = match (
+                    cond[0].belief > cond[1].belief,
+                    cond[0].disbelief > cond[1].disbelief,
+                ) {
+                    // Case I
                     (true, true) | (false, false) => 0.0,
-                    (bp, dp) => {
-                        let evyx = ytx.belief * self.base_rate
-                            + yfx.belief * rvax
-                            + ay * (ytx.uncertainty * self.base_rate + yfx.uncertainty * rvax);
-                        let evx = self.projection();
-                        match (bp, dp) {
-                            (true, false) => {
-                                let r = (1.0 - ay) * yfx.belief + ay * (1.0 - ytx.disbelief);
-                                match (evyx > r, evx > self.base_rate) {
-                                    (false, false) => {
-                                        self.base_rate * self.uncertainty * (bi - yfx.belief)
-                                            / (evx * ay)
-                                    }
-                                    (false, true) => {
-                                        self.base_rate
-                                            * self.uncertainty
-                                            * (di - ytx.disbelief)
-                                            * (ytx.belief - yfx.belief)
-                                            / ((1.0 - evx) * ay * (yfx.disbelief - ytx.disbelief))
-                                    }
-                                    (true, false) => {
-                                        rvax * self.uncertainty
-                                            * (bi - yfx.belief)
-                                            * (yfx.disbelief - ytx.disbelief)
-                                            / (evx * (1.0 - ay) * (ytx.belief - yfx.belief))
-                                    }
-                                    (true, true) => {
-                                        rvax * self.uncertainty * (di - ytx.disbelief)
-                                            / ((1.0 - evx) * (1.0 - ay))
-                                    }
+                    (bp, _) => {
+                        let pyx = cond[0].belief * self.base_rate
+                            + cond[1].belief * rvax
+                            + ay * (cond[0].uncertainty * self.base_rate
+                                + cond[1].uncertainty * rvax);
+                        let px = self.projection();
+                        let r = cond[1].belief + ay * (1.0 - cond[1].belief - cond[0].disbelief);
+                        dbg!(pyx, r, px);
+                        match (pyx > r, px > self.base_rate) {
+                            (false, false) => {
+                                if bp {
+                                    // Case II.A.1
+                                    self.base_rate * self.uncertainty * (bi - cond[1].belief)
+                                        / (px * ay)
+                                } else {
+                                    // Case III.A.1
+                                    rvax * self.uncertainty
+                                        * (di - cond[1].disbelief)
+                                        * (cond[1].belief - cond[0].belief)
+                                        / (px * ay * (cond[0].disbelief - cond[1].disbelief))
                                 }
                             }
                             (false, true) => {
-                                let r = ytx.belief + ay * (1.0 - ytx.belief - yfx.disbelief);
-                                match (evyx > r, evx > self.base_rate) {
-                                    (false, false) => {
-                                        rvax * self.uncertainty
-                                            * (di - yfx.disbelief)
-                                            * (yfx.belief - ytx.belief)
-                                            / (evx * ay * (ytx.disbelief - yfx.disbelief))
-                                    }
-                                    (false, true) => {
-                                        rvax * self.uncertainty * (bi - ytx.belief)
-                                            / ((1.0 - evx) * ay)
-                                    }
-                                    (true, false) => {
-                                        self.base_rate * self.uncertainty * (di - yfx.disbelief)
-                                            / (evx * (1.0 - ay))
-                                    }
-                                    (true, true) => {
-                                        self.base_rate
-                                            * self.uncertainty
-                                            * (bi - ytx.belief)
-                                            * (ytx.disbelief - yfx.disbelief)
-                                            / ((1.0 - evx) * (1.0 - ay) * (yfx.belief - ytx.belief))
-                                    }
+                                if bp {
+                                    // Case II.A.2
+                                    self.base_rate
+                                        * self.uncertainty
+                                        * (di - cond[0].disbelief)
+                                        * (cond[0].belief - cond[1].belief)
+                                        / ((1.0 - px)
+                                            * ay
+                                            * (cond[1].disbelief - cond[0].disbelief))
+                                } else {
+                                    // Case III.A.2
+                                    rvax * self.uncertainty * (bi - cond[0].belief)
+                                        / ((1.0 - px) * ay)
                                 }
                             }
-                            _ => unreachable!(),
+                            (true, false) => {
+                                if bp {
+                                    // Case II.B.1
+                                    rvax * self.uncertainty
+                                        * (bi - cond[1].belief)
+                                        * (cond[1].disbelief - cond[0].disbelief)
+                                        / (px * (1.0 - ay) * (cond[0].belief - cond[1].belief))
+                                } else {
+                                    // Case III.B.1
+                                    self.base_rate * self.uncertainty * (di - cond[1].disbelief)
+                                        / (px * (1.0 - ay))
+                                }
+                            }
+                            (true, true) => {
+                                if bp {
+                                    // Case II.B.2
+                                    rvax * self.uncertainty * (di - cond[0].disbelief)
+                                        / ((1.0 - px) * (1.0 - ay))
+                                } else {
+                                    // Case III.B.2
+                                    self.base_rate
+                                        * self.uncertainty
+                                        * (bi - cond[0].belief)
+                                        * (cond[0].disbelief - cond[1].disbelief)
+                                        / ((1.0 - px)
+                                            * (1.0 - ay)
+                                            * (cond[1].belief - cond[0].belief))
+                                }
+                            }
                         }
                     }
                 };
@@ -348,8 +362,9 @@ impl<T, U> MOpinion<T, U> {
 pub trait Deduction<Rhs, U> {
     type Output;
 
-    /// Computes the conditionally deduced opinion of `self` with a base rate vector `ay` by `wyx` representing a collection of conditional opinions.
-    fn deduce(&self, wyx: &Rhs, ay: U) -> Self::Output;
+    /// Computes the conditionally deduced opinion of `self` with a base rate vector `ay`
+    /// by `cond` representing a collection of conditional opinions.
+    fn deduce(&self, cond: &Rhs, ay: U) -> Self::Output;
 
     /// Computes the probability projection of the deduced opinion
     fn projection(&self, wyx: &Rhs) -> U;
@@ -488,11 +503,11 @@ macro_rules! impl_msl {
         {
             type Output = MOpinion1d<$ft, M>;
 
-            fn deduce(&self, wyx: &[MOpinion1d<$ft, M>; N], ay: [$ft; M]) -> Self::Output {
+            fn deduce(&self, cond: &[MOpinion1d<$ft, M>; N], ay: [$ft; M]) -> Self::Output {
                 assert!(N > 0 && M > 1, "N > 0 and M > 1 must hold.");
                 let eyhx: [$ft; M] = array::from_fn(|t| {
                     (0..N)
-                        .map(|i| self.base_rate[i] * wyx[i].projection(t))
+                        .map(|i| self.base_rate[i] * cond[i].projection(t))
                         .sum()
                 });
 
@@ -505,8 +520,8 @@ macro_rules! impl_msl {
                             let mut v = 1.0;
                             for r1 in 0..N {
                                 for s1 in 0..N {
-                                    let w = 1.0 - wyx[r1].belief[t] - wyx[r1].uncertainty
-                                        + wyx[s1].belief[t];
+                                    let w = 1.0 - cond[r1].belief[t] - cond[r1].uncertainty
+                                        + cond[s1].belief[t];
                                     if v > w {
                                         v = w;
                                         r = r1;
@@ -516,12 +531,12 @@ macro_rules! impl_msl {
                             }
                             (r, s)
                         };
-                        let eyhxx = (1.0 - ay[t]) * wyx[s].belief[t]
-                            + ay[t] * (wyx[r].belief[t] + wyx[r].uncertainty);
+                        let eyhxx = (1.0 - ay[t]) * cond[s].belief[t]
+                            + ay[t] * (cond[r].belief[t] + cond[r].uncertainty);
                         if e <= eyhxx {
-                            (e - wyx[s].belief[t]) / ay[t]
+                            (e - cond[s].belief[t]) / ay[t]
                         } else {
-                            (wyx[r].belief[t] + wyx[r].uncertainty - e) / (1.0 - ay[t])
+                            (cond[r].belief[t] + cond[r].uncertainty - e) / (1.0 - ay[t])
                         }
                     })
                     .reduce(<$ft>::max)
@@ -540,11 +555,11 @@ macro_rules! impl_msl {
 
                 let u = apex
                     - (0..N)
-                        .map(|i| (apex - wyx[i].uncertainty) * self.belief[i])
+                        .map(|i| (apex - cond[i].uncertainty) * self.belief[i])
                         .sum::<$ft>();
                 let b: [$ft; M] = array::from_fn(|j| {
                     (0..N)
-                        .map(|i| self.projection(i) * wyx[i].projection(j))
+                        .map(|i| self.projection(i) * cond[i].projection(j))
                         .sum::<$ft>()
                         - ay[j] * u
                 });
@@ -802,15 +817,19 @@ mod tests {
 
     #[test]
     fn test_bsl_deduction() {
-        let wytx = BOpinion::<f32>::new(0.90, 0.02, 0.08, 0.5);
-        let wyfx = BOpinion::<f32>::new(0.40, 0.52, 0.08, 0.5);
-        let wx = BOpinion::<f32>::new(0.00, 0.38, 0.62, 0.5);
-        println!("{}", wx.deduce(&wytx, &wyfx, 0.5));
+        let cond = [
+            BOpinion::<f32>::new(0.90, 0.02, 0.08, 0.5),
+            BOpinion::<f32>::new(0.40, 0.52, 0.08, 0.5),
+        ];
+        let w = BOpinion::<f32>::new(0.00, 0.38, 0.62, 0.5);
+        println!("{}", w.deduce(&cond, 0.5));
 
-        let wytx = BOpinion::<f32>::new(0.72, 0.18, 0.1, 0.5);
-        let wyfx = BOpinion::<f32>::new(0.13, 0.57, 0.3, 0.5);
-        let wx = BOpinion::<f32>::new(0.7, 0.0, 0.3, 0.33);
-        println!("{}", wx.deduce(&wytx, &wyfx, 0.5));
+        let cond = [
+            BOpinion::<f32>::new(0.72, 0.18, 0.1, 0.5),
+            BOpinion::<f32>::new(0.13, 0.57, 0.3, 0.5),
+        ];
+        let w = BOpinion::<f32>::new(0.7, 0.0, 0.3, 0.33);
+        println!("{}", w.deduce(&cond, 0.5));
     }
 
     #[test]
@@ -830,10 +849,12 @@ mod tests {
 
     #[test]
     fn test_deduction1() {
-        let wx = BOpinion::<f32>::new(0.7, 0.0, 0.3, 1.0 / 3.0);
-        let wytx = BOpinion::<f32>::new(0.72, 0.18, 0.1, 0.5);
-        let wyfx = BOpinion::<f32>::new(0.13, 0.57, 0.3, 0.5);
-        println!("{}", wx.deduce(&wytx, &wyfx, 0.5));
+        let w = BOpinion::<f32>::new(0.7, 0.0, 0.3, 1.0 / 3.0);
+        let cond = [
+            BOpinion::<f32>::new(0.72, 0.18, 0.1, 0.5),
+            BOpinion::<f32>::new(0.13, 0.57, 0.3, 0.5),
+        ];
+        println!("{}", w.deduce(&cond, 0.5));
 
         let wx = MOpinion1d::<f32, 2>::new([0.7, 0.0], 0.3, [1.0 / 3.0, 2.0 / 3.0]);
         let wyx = [
@@ -863,9 +884,11 @@ mod tests {
         println!("{:?}|{}", wx, wx.projection(0));
 
         let wa = BOpinion::<f32>::new(0.7, 0.1, 0.2, 0.5);
-        let wxta = BOpinion::<f32>::new(0.7, 0.0, 0.3, 0.5);
-        let wxfa = BOpinion::<f32>::new(0.0, 0.7, 0.3, 0.5);
-        println!("{}", wa.deduce(&wxta, &wxfa, 0.5));
+        let wxa = [
+            BOpinion::<f32>::new(0.7, 0.0, 0.3, 0.5),
+            BOpinion::<f32>::new(0.0, 0.7, 0.3, 0.5),
+        ];
+        println!("{}", wa.deduce(&wxa, 0.5));
     }
 
     #[test]
@@ -880,7 +903,18 @@ mod tests {
     }
 
     #[test]
-    fn test_msl_deduction() {
+    fn test_bo_deduction() {
+        let a = 0.5;
+        let w = BOpinion::<f32>::new(0.0, 1.0, 0.0, 0.8);
+        let cond = [
+            BOpinion::<f32>::new(1.0, 0.0, 0.0, a),
+            BOpinion::<f32>::new(0.0, 0.0, 1.0, a),
+        ];
+        println!("{:?}", w.deduce(&cond, a));
+    }
+
+    #[test]
+    fn test_mo_deduction() {
         let a = [0.7, 0.2, 0.1];
         let wx = MOpinion1d::<f32, 3>::new([0.0, 0.5, 0.5], 0.0, a.clone());
         let wyx = [
