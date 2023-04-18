@@ -224,7 +224,6 @@ macro_rules! impl_bsl {
                                 + cond[1].uncertainty * rvax);
                         let px = self.projection();
                         let r = cond[1].belief + ay * (1.0 - cond[1].belief - cond[0].disbelief);
-                        dbg!(pyx, r, px);
                         match (pyx > r, px > self.base_rate) {
                             (false, false) => {
                                 if bp {
@@ -411,27 +410,30 @@ impl<T, U> MOpinion<T, U> {
 /// A multinomial opinion with 1-dimensional vectors.
 pub type MOpinion1d<T, const N: usize> = MOpinion<[T; N], T>;
 
-/// The simplex of a multinomial opinion, from which a base rate is excluded.
+/// The reference type of a simplex of a multinomial opinion, from which a base rate is excluded.
 #[derive(Debug)]
-pub struct MSimplex<'a, T, const N: usize> {
+pub struct MSimplexRef<'a, T, const N: usize> {
     belief: [&'a T; N],
     uncertainty: &'a T,
 }
 
-macro_rules! impl_msimplex {
-    ($ft: ty) => {
-        impl<'a, const N: usize> MSimplex<'a, $ft, N> {
-            pub fn projection(&self, a: &[$ft; N]) -> [$ft; N] {
-                array::from_fn(|i| self.belief[i] + self.uncertainty * a[i])
-            }
-        }
-    };
+/// The reference of a simplex of a multinomial opinion, from which a base rate is excluded.
+#[derive(Debug)]
+pub struct MSimplex<T, const N: usize> {
+    belief: [T; N],
+    uncertainty: T,
 }
 
-impl_msimplex!(f32);
-impl_msimplex!(f64);
+impl<T, const N: usize> MSimplex<T, N> {
+    pub fn new(b: [T; N], u: T) -> Self {
+        Self {
+            belief: b,
+            uncertainty: u,
+        }
+    }
+}
 
-impl<'a, T, const N: usize> From<&'a MOpinion1d<T, N>> for MSimplex<'a, T, N> {
+impl<'a, T, const N: usize> From<&'a MOpinion1d<T, N>> for MSimplexRef<'a, T, N> {
     fn from(value: &'a MOpinion1d<T, N>) -> Self {
         Self {
             belief: array::from_fn(|i| &value.belief[i]),
@@ -440,7 +442,16 @@ impl<'a, T, const N: usize> From<&'a MOpinion1d<T, N>> for MSimplex<'a, T, N> {
     }
 }
 
-impl<'a, T> From<&'a BOpinion<T>> for MSimplex<'a, T, 2> {
+impl<'a, T, const N: usize> From<&'a MSimplex<T, N>> for MSimplexRef<'a, T, N> {
+    fn from(value: &'a MSimplex<T, N>) -> Self {
+        Self {
+            belief: array::from_fn(|i| &value.belief[i]),
+            uncertainty: &value.uncertainty,
+        }
+    }
+}
+
+impl<'a, T> From<&'a BOpinion<T>> for MSimplexRef<'a, T, 2> {
     fn from(value: &'a BOpinion<T>) -> Self {
         Self {
             belief: [&value.belief, &value.disbelief],
@@ -449,13 +460,13 @@ impl<'a, T> From<&'a BOpinion<T>> for MSimplex<'a, T, 2> {
     }
 }
 
-pub struct MSimplexes<'a, T, const N: usize, const M: usize>([MSimplex<'a, T, N>; M]);
+pub struct MSimplexRefs<'a, T, const M: usize, const N: usize>([MSimplexRef<'a, T, M>; N]);
 
-impl<'a, I, T, const N: usize, const M: usize> Index<I> for MSimplexes<'a, T, N, M>
+impl<'a, I, T, const M: usize, const N: usize> Index<I> for MSimplexRefs<'a, T, M, N>
 where
-    [MSimplex<'a, T, N>]: Index<I>,
+    [MSimplexRef<'a, T, M>]: Index<I>,
 {
-    type Output = <[MSimplex<'a, T, N>; M] as Index<I>>::Output;
+    type Output = <[MSimplexRef<'a, T, M>; N] as Index<I>>::Output;
 
     fn index(&self, index: I) -> &Self::Output {
         self.0.index(index)
@@ -463,18 +474,76 @@ where
 }
 
 impl<'a, T, const N: usize, const M: usize> From<&'a [MOpinion1d<T, N>; M]>
-    for MSimplexes<'a, T, N, M>
+    for MSimplexRefs<'a, T, N, M>
 {
     fn from(value: &'a [MOpinion1d<T, N>; M]) -> Self {
-        MSimplexes(array::from_fn(|i| (&value[i]).into()))
+        MSimplexRefs(array::from_fn(|i| (&value[i]).into()))
     }
 }
 
-impl<'a, T, const M: usize> From<&'a [BOpinion<T>; M]> for MSimplexes<'a, T, 2, M> {
-    fn from(value: &'a [BOpinion<T>; M]) -> Self {
-        MSimplexes(array::from_fn(|i| (&value[i]).into()))
+// impl<'a, T, const N: usize, const M: usize> From<[MSimplexRef<'a, T, N>; M]>
+//     for MSimplexRefs<'a, T, N, M>
+// {
+//     fn from(value: [MSimplexRef<'a, T, N>; M]) -> Self {
+//         MSimplexRefs(array::from_fn(|i| (&value[i]).into()))
+//     }
+// }
+
+impl<'a, T, const N: usize> From<&'a [BOpinion<T>; N]> for MSimplexRefs<'a, T, 2, N> {
+    fn from(value: &'a [BOpinion<T>; N]) -> Self {
+        MSimplexRefs(array::from_fn(|i| (&value[i]).into()))
     }
 }
+
+pub struct MSimplexes<T, const M: usize, const N: usize>([MSimplex<T, M>; N]);
+
+impl<'a, T, const M: usize, const N: usize> From<&'a MSimplexes<T, M, N>>
+    for MSimplexRefs<'a, T, M, N>
+{
+    fn from(value: &'a MSimplexes<T, M, N>) -> Self {
+        MSimplexRefs(array::from_fn(|i| (&value.0[i]).into()))
+    }
+}
+
+impl<'a, T, const M: usize, const N: usize> From<([[T; M]; N], [T; N])> for MSimplexes<T, M, N> {
+    fn from(value: ([[T; M]; N], [T; N])) -> Self {
+        let (bs, us) = value;
+        let mut bs = Vec::from(bs);
+        let mut us = Vec::from(us);
+        MSimplexes(array::from_fn(|i| {
+            let b = bs.swap_remove(N - 1 - i);
+            let u = us.swap_remove(N - 1 - i);
+            MSimplex::new(b, u)
+        }))
+    }
+}
+
+macro_rules! impl_msimplex {
+    ($ft: ty) => {
+        impl<'a, const N: usize> MSimplexRef<'a, $ft, N> {
+            pub fn projection(&self, a: &[$ft; N]) -> [$ft; N] {
+                array::from_fn(|i| self.belief[i] + self.uncertainty * a[i])
+            }
+        }
+
+        impl<'a, const M: usize, const N: usize> MSimplexRefs<'a, $ft, N, M> {
+            pub fn marginal_base_rate(&self, ax: &[$ft; M]) -> [$ft; N] {
+                array::from_fn(|j| {
+                    let temp = (0..M).map(|i| ax[i] * self[i].uncertainty).sum::<$ft>();
+                    let temp2 = (0..M).map(|i| ax[i] * self[i].belief[j]).sum::<$ft>();
+                    if temp <= <$ft>::EPSILON {
+                        temp2
+                    } else {
+                        temp2 / (1.0 - temp)
+                    }
+                })
+            }
+        }
+    };
+}
+
+impl_msimplex!(f32);
+impl_msimplex!(f64);
 
 /// The deduction operator.
 pub trait Deduction<Rhs, U> {
@@ -482,10 +551,24 @@ pub trait Deduction<Rhs, U> {
 
     /// Computes the conditionally deduced opinion of `self` with a base rate vector `ay`
     /// by `cond` representing a collection of conditional opinions.
-    fn deduce(&self, cond: Rhs, ay: U) -> Self::Output;
+    fn deduce(&self, conds: Rhs, ay: U) -> Self::Output;
 
     /// Computes the probability projection of the deduced opinion
-    fn projection(&self, cond: Rhs, ay: U) -> U;
+    fn projection(&self, conds: Rhs, ay: U) -> U;
+}
+
+/// The abduction operator.
+pub trait Abduction<Rhs, U>: Deduction<Self::Inv, U> {
+    type Inv;
+
+    /// Computes the conditionally abduced opinion of `self` with a base rate vector `ay`
+    /// by `cond` representing a collection of conditional opinions.
+    fn abduce(&self, conds: Rhs, ax: U) -> <Self as Deduction<Self::Inv, U>>::Output {
+        let (inv_conds, ax) = Self::inverse(conds, ax);
+        self.deduce(inv_conds, ax)
+    }
+
+    fn inverse(conds: Rhs, ax: U) -> (Self::Inv, U);
 }
 
 macro_rules! impl_msl {
@@ -613,44 +696,60 @@ macro_rules! impl_msl {
             }
         }
 
-        impl<'a, const N: usize, const M: usize> Deduction<MSimplexes<'a, $ft, M, N>, [$ft; M]>
-            for MOpinion1d<$ft, N>
+        impl<'a, const M: usize, const N: usize> Deduction<MSimplexes<$ft, N, M>, [$ft; N]>
+            for MOpinion1d<$ft, M>
         {
-            type Output = MOpinion1d<$ft, M>;
+            type Output = MOpinion1d<$ft, N>;
 
-            fn deduce(&self, cond: MSimplexes<'a, $ft, M, N>, ay: [$ft; M]) -> Self::Output {
-                assert!(N > 0 && M > 1, "N > 0 and M > 1 must hold.");
+            fn deduce(&self, conds: MSimplexes<$ft, N, M>, ay: [$ft; N]) -> Self::Output {
+                Deduction::deduce(self, MSimplexRefs::from(&conds), ay)
+            }
 
-                let ay: [$ft; M] = if (0..N)
-                    .map(|i| cond[i].uncertainty)
+            fn projection(&self, conds: MSimplexes<$ft, N, M>, ay: [$ft; N]) -> [$ft; N] {
+                Deduction::projection(self, MSimplexRefs::from(&conds), ay)
+            }
+        }
+
+        impl<'a, const M: usize, const N: usize> Deduction<&'a [MOpinion1d<$ft, N>; M], [$ft; N]>
+            for MOpinion1d<$ft, M>
+        {
+            type Output = MOpinion1d<$ft, N>;
+
+            fn deduce(&self, conds: &'a [MOpinion1d<$ft, N>; M], ay: [$ft; N]) -> Self::Output {
+                Deduction::deduce(self, MSimplexRefs::from(conds), ay)
+            }
+
+            fn projection(&self, conds: &'a [MOpinion1d<$ft, N>; M], ay: [$ft; N]) -> [$ft; N] {
+                Deduction::projection(self, MSimplexRefs::from(conds), ay)
+            }
+        }
+
+        impl<'a, const M: usize, const N: usize> Deduction<MSimplexRefs<'a, $ft, N, M>, [$ft; N]>
+            for MOpinion1d<$ft, M>
+        {
+            type Output = MOpinion1d<$ft, N>;
+
+            fn deduce(&self, conds: MSimplexRefs<'a, $ft, N, M>, ay: [$ft; N]) -> Self::Output {
+                assert!(M > 0 && N > 1, "N > 0 and M > 1 must hold.");
+
+                let ay: [$ft; N] = if (0..M)
+                    .map(|i| conds[i].uncertainty)
                     .sum::<$ft>()
-                    .approx_eq(N as $ft)
+                    .approx_eq(M as $ft)
                 {
                     ay
                 } else {
-                    array::from_fn(|j| {
-                        let x = (0..N)
-                            .map(|i| self.base_rate[i] * cond[i].belief[j])
-                            .sum::<$ft>();
-                        let y = (0..N)
-                            .map(|i| self.base_rate[i] * cond[i].uncertainty)
-                            .sum::<$ft>() as f64;
-                        let z = 1.0f64 - y;
-                        let w = x as f64 / z;
-                        w as $ft
-                    })
+                    conds.marginal_base_rate(&self.base_rate)
                 };
 
-                let cond_p: [[$ft; M]; N] = array::from_fn(|i| cond[i].projection(&ay));
-
-                let pyhx: [$ft; M] =
+                let cond_p: [[$ft; N]; M] = array::from_fn(|i| conds[i].projection(&ay));
+                let pyhx: [$ft; N] =
                     array::from_fn(|j| (0..N).map(|i| self.base_rate[i] * cond_p[i][j]).sum());
-
-                let uyhx = (0..M)
+                let uyhx = (0..N)
                     .map(|j| {
                         (pyhx[j]
-                            - (0..N)
-                                .map(|i| *cond[i].belief[j])
+                            - (0..M)
+                                .map(|i| *conds[i].belief[j])
                                 .reduce(<$ft>::min)
                                 .unwrap())
                             / ay[j]
@@ -659,43 +758,91 @@ macro_rules! impl_msl {
                     .unwrap();
 
                 let u = uyhx
-                    - (0..N)
-                        .map(|i| (uyhx - cond[i].uncertainty) * self.belief[i])
+                    - (0..M)
+                        .map(|i| (uyhx - conds[i].uncertainty) * self.belief[i])
                         .sum::<$ft>();
-                let b: [$ft; M] = array::from_fn(|j| {
-                    (0..N)
+                let b: [$ft; N] = array::from_fn(|j| {
+                    (0..M)
                         .map(|i| self.projection(i) * cond_p[i][j])
                         .sum::<$ft>()
                         - ay[j] * u
                 });
-                MOpinion1d::<$ft, M>::new_unchecked(b, u, ay)
+                MOpinion1d::<$ft, N>::new_unchecked(b, u, ay)
             }
 
-            fn projection(&self, cond: MSimplexes<$ft, M, N>, ay: [$ft; M]) -> [$ft; M] {
-                let ay: [$ft; M] = if (0..N)
-                    .map(|i| cond[i].uncertainty)
+            fn projection(&self, conds: MSimplexRefs<$ft, N, M>, ay: [$ft; N]) -> [$ft; N] {
+                let ay: [$ft; N] = if (0..M)
+                    .map(|i| conds[i].uncertainty)
                     .sum::<$ft>()
-                    .is_in_range(0.0, N as $ft)
+                    .is_in_range(0.0, M as $ft)
                 {
-                    array::from_fn(|j| {
-                        (0..N)
-                            .map(|i| self.base_rate[i] * cond[i].belief[j])
-                            .sum::<$ft>()
-                            / (1.0
-                                - (0..N)
-                                    .map(|i| self.base_rate[i] * cond[i].uncertainty)
-                                    .sum::<$ft>())
-                    })
+                    conds.marginal_base_rate(&self.base_rate)
                 } else {
                     ay
                 };
-                let cond_p: [[$ft; M]; N] = array::from_fn(|i| cond[i].projection(&ay));
+                let cond_p: [[$ft; N]; M] = array::from_fn(|i| conds[i].projection(&ay));
 
                 array::from_fn(|j| {
-                    (0..N)
+                    (0..M)
                         .map(|i| self.projection(i) * cond_p[i][j])
                         .sum::<$ft>()
                 })
+            }
+        }
+
+        impl<'a, const N: usize, const M: usize> Abduction<&'a [MOpinion1d<$ft, N>; M], [$ft; M]>
+            for MOpinion1d<$ft, N>
+        {
+            type Inv = MSimplexes<$ft, M, N>;
+
+            fn inverse(
+                conds: &'a [MOpinion1d<$ft, N>; M],
+                ax: [$ft; M],
+            ) -> (MSimplexes<$ft, M, N>, [$ft; M]) {
+                let p_yx: [[$ft; N]; M] =
+                    array::from_fn(|i| array::from_fn(|j| conds[i].projection(j)));
+                let p_xy: [[$ft; M]; N] = array::from_fn(|j| {
+                    array::from_fn(|i| {
+                        ax[i] * p_yx[i][j] / (0..M).map(|k| ax[k] * p_yx[k][j]).sum::<$ft>()
+                    })
+                });
+                let ay = MSimplexRefs::from(conds).marginal_base_rate(&ax);
+                let u_yx_sum = conds.iter().map(|cond| cond.uncertainty).sum::<$ft>();
+                let irrelevance_yx: [$ft; N] = array::from_fn(|j| {
+                    1.0 - (0..M).map(|i| p_yx[i][j]).reduce(<$ft>::max).unwrap()
+                        + (0..M).map(|i| p_yx[i][j]).reduce(<$ft>::min).unwrap()
+                });
+                let weights_yx = if u_yx_sum == 0.0 {
+                    [0.0; M]
+                } else {
+                    array::from_fn(|i| conds[i].uncertainty / u_yx_sum)
+                };
+                let u_yx_marginal: [$ft; M] = array::from_fn(|i| {
+                    (0..N)
+                        .map(|j| p_yx[i][j] / ay[j])
+                        .reduce(<$ft>::min)
+                        .unwrap()
+                });
+                let u_yx_weight: [$ft; M] = array::from_fn(|i| {
+                    let tmp = u_yx_marginal[i];
+                    if tmp == 0.0 {
+                        0.0
+                    } else {
+                        weights_yx[i] * conds[i].uncertainty / tmp
+                    }
+                });
+                let u_yx_exp: $ft = u_yx_weight.into_iter().sum();
+                let u_xy_marginal: [$ft; N] = array::from_fn(|j| {
+                    (0..M)
+                        .map(|i| p_yx[i][j] / (0..M).map(|k| ax[k] * p_yx[k][j]).sum::<$ft>())
+                        .reduce(<$ft>::min)
+                        .unwrap()
+                });
+                let u_xy_inv: [$ft; N] = array::from_fn(|j| {
+                    u_xy_marginal[j] * (u_yx_exp + (1.0 - u_yx_exp) * irrelevance_yx[j])
+                });
+                let bs = array::from_fn(|j| array::from_fn(|i| p_xy[j][i] - u_xy_inv[j] * ax[i]));
+                ((bs, u_xy_inv).into(), ax)
             }
         }
     };
@@ -748,14 +895,16 @@ macro_rules! impl_sl_conv {
             }
         }
 
-        impl<'a, const N: usize> Deduction<MSimplexes<'a, $ft, 2, N>, $ft> for MOpinion1d<$ft, N> {
+        impl<'a, const N: usize> Deduction<MSimplexRefs<'a, $ft, 2, N>, $ft>
+            for MOpinion1d<$ft, N>
+        {
             type Output = BOpinion<$ft>;
 
-            fn deduce(&self, cond: MSimplexes<'a, $ft, 2, N>, ay: $ft) -> Self::Output {
+            fn deduce(&self, cond: MSimplexRefs<'a, $ft, 2, N>, ay: $ft) -> Self::Output {
                 self.deduce(cond, [ay, 1.0 - ay]).into()
             }
 
-            fn projection(&self, cond: MSimplexes<$ft, 2, N>, ay: $ft) -> $ft {
+            fn projection(&self, cond: MSimplexRefs<$ft, 2, N>, ay: $ft) -> $ft {
                 (0..N)
                     .map(|i| self.projection(i) * cond[i].projection(&[ay, 1.0 - ay])[0])
                     .sum::<$ft>()
@@ -822,7 +971,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::{BOpinion, Deduction, EpsilonEq, MOpinion1d};
+    use crate::{Abduction, BOpinion, Deduction, EpsilonEq, MOpinion1d};
 
     #[test]
     fn test_bsl_boundary() {
@@ -984,7 +1133,7 @@ mod tests {
             MOpinion1d::<f32, 2>::new([0.72, 0.18], 0.1, [0.5, 0.5]),
             MOpinion1d::<f32, 2>::new([0.13, 0.57], 0.3, [0.5, 0.5]),
         ];
-        println!("{:?}", wx.deduce((&wyx).into(), [0.5, 0.5]));
+        println!("{:?}", wx.deduce(&wyx, [0.5, 0.5]));
     }
 
     #[test]
@@ -1003,7 +1152,7 @@ mod tests {
             MOpinion1d::<f32, 2>::new([0.0, 0.7], 0.3, [0.5, 0.5]),
             MOpinion1d::<f32, 2>::new([0.0, 0.0], 1.0, [0.5, 0.5]),
         ];
-        let wx = wa.deduce((&wxa).into(), [0.5, 0.5]);
+        let wx = wa.deduce(&wxa, [0.5, 0.5]);
         println!("{:?}|{}", wx, wx.projection(0));
 
         let wa = BOpinion::<f32>::new(0.7, 0.1, 0.2, 0.5);
@@ -1015,17 +1164,6 @@ mod tests {
     }
 
     #[test]
-    fn test_deduction3() {
-        let wa = MOpinion1d::<f32, 2>::new([0.7, 0.1], 0.2, [0.5, 0.5]);
-        let wxa = [
-            MOpinion1d::<f32, 3>::new([0.7, 0.0, 0.0], 0.3, [0.3, 0.3, 0.4]),
-            MOpinion1d::<f32, 3>::new([0.0, 0.7, 0.0], 0.3, [0.3, 0.3, 0.4]),
-        ];
-        let wx = wa.deduce((&wxa).into(), [0.3, 0.3, 0.4]);
-        println!("{:?}|{}", wx, wx.projection(0));
-    }
-
-    #[test]
     fn test_bo_deduction() {
         let wx = MOpinion1d::<f32, 2>::new([0.0, 0.0], 1.0, [0.01, 0.99]);
         let ay = [0.01, 0.99];
@@ -1033,7 +1171,7 @@ mod tests {
             MOpinion1d::<f32, 2>::new([0.99, 0.0], 0.01, ay.clone()),
             MOpinion1d::<f32, 2>::new([0.01, 0.98], 0.01, ay.clone()),
         ];
-        let wy: BOpinion<f32> = wx.deduce((&cond).into(), ay).into();
+        let wy: BOpinion<f32> = wx.deduce(&cond, ay).into();
         let m = BOpinion::<f32>::new(0.72, 0.18, 0.1, 0.5);
 
         println!("{:?}, {}", wy, wy.projection());
@@ -1047,17 +1185,19 @@ mod tests {
         }
         let wym = wyd.cfuse(&m).unwrap();
         println!("{:?}, {}", wym, wym.projection());
-        // println!("{:?}, {}", wyd, wyd.projection());
     }
 
     #[test]
-    fn test_mo_deduction() {
-        let wx = MOpinion1d::<f32, 2>::new([0.9, 0.0], 0.1, [0.1, 0.9]);
-        let ay = [1.0, 0.0, 0.0];
-        let wyx = [
-            MOpinion1d::<f32, 3>::new([0.0, 0.8, 0.1], 0.10, ay.clone()),
-            MOpinion1d::<f32, 3>::new([0.7, 0.0, 0.1], 0.20, ay.clone()),
+    fn test_abduction() {
+        let ay = [0.35, 0.30, 0.35];
+        let conds = [
+            MOpinion1d::<f32, 3>::new([0.25, 0.04, 0.00], 0.71, ay.clone()),
+            MOpinion1d::<f32, 3>::new([0.00, 0.50, 0.50], 0.00, ay.clone()),
+            MOpinion1d::<f32, 3>::new([0.00, 0.25, 0.75], 0.00, ay.clone()),
         ];
-        println!("{:?}", wx.deduce((&wyx).into(), ay))
+        let ax = [0.70, 0.20, 0.10];
+        let wy = MOpinion1d::<f32, 3>::new([0.00, 0.43, 0.00], 0.57, ay);
+        let wx = wy.abduce(&conds, ax);
+        println!("{:?}", wx);
     }
 }
