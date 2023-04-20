@@ -28,7 +28,7 @@ dependencies = [
 
 [[package]]
 name = "subjective-logic"
-version = "0.3.4"
+version = "0.3.5"
 dependencies = [
  "paste",
  "thiserror",

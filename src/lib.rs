@@ -538,6 +538,18 @@ impl<'a, T, const M: usize, const N: usize> From<([[T; M]; N], [T; N])> for MSim
 macro_rules! impl_msimplex {
     ($ft: ty) => {
         impl<const N: usize> MSimplex<$ft, N> {
+            /// Creates a new simplex of a multinomial opinion (i.e. excluding a base rate) from parameters,
+            /// which must satisfy the following conditions:
+            /// $$
+            /// \begin{aligned}
+            /// \sum_{i=0}^{\mathsf N-1}\mathsf b\[i\] + \mathsf u \&= 1\quad\text{where }
+            /// \mathsf b \in [0, 1]^\mathsf N, \mathsf u \in [0, 1],\\\\
+            /// \mathsf u \in [0, 1].
+            /// \end{aligned}
+            /// $$
+            ///
+            /// # Errors
+            /// If even pameter does not satisfy the conditions, an error is returned.
             pub fn try_new(b: [$ft; N], u: $ft) -> Result<Self, InvalidValueError> {
                 if !(b.iter().sum::<$ft>() + u).approx_eq(1.0) {
                     return Err(InvalidValueError(
@@ -556,6 +568,15 @@ macro_rules! impl_msimplex {
                     }
                 }
                 Ok(Self::new_unchecked(b, u))
+            }
+
+            /// Creates a new simplex of a multinomial opinion (i.e. excluding a base rate) from parameters,
+            /// which reqiure the same conditions as `try_new`.
+            ///
+            /// # Panics
+            /// Panics if even pameter does not satisfy the conditions.
+            pub fn new(b: [$ft; N], u: $ft) -> Self {
+                Self::try_new(b, u).unwrap()
             }
         }
 
@@ -630,7 +651,7 @@ pub trait Abduction<Rhs, U, V>: Sized {
 macro_rules! impl_msl {
     ($ft: ty) => {
         impl<const N: usize> MOpinion1d<$ft, N> {
-            /// Creates a new binomial opinion from parameters, which must satisfy the following conditions:
+            /// Creates a new multinomial opinion from parameters, which must satisfy the following conditions:
             /// $$
             /// \begin{aligned}
             /// \sum_{i=0}^{\mathsf N-1}\mathsf b\[i\] + \mathsf u \&= 1\quad\text{where }
