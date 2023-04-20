@@ -879,7 +879,6 @@ macro_rules! impl_msl {
                             / (self.u() + rhs_u - self.u() * rhs_u * 2.0)
                     })
                 };
-                dbg!(a);
                 Self::try_from_simplex(s, a)
             }
 
