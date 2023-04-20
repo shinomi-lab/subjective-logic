@@ -6,8 +6,8 @@ use std::{array, fmt::Display, ops::Index};
 /// A binomial opinion.
 #[derive(Debug)]
 pub struct BOpinion<T> {
-    simplex: MSimplex<T, 2>,
-    base_rate: T,
+    pub simplex: MSimplex<T, 2>,
+    pub base_rate: T,
 }
 
 impl<T: Display> Display for BOpinion<T> {
@@ -424,8 +424,8 @@ impl<'a, T, const N: usize, const M: usize> From<&'a [MSimplex<T, N>; M]>
 /// The generlized structure of a multinomial opinion.
 #[derive(Debug, Clone)]
 pub struct MOpinion<T, U> {
-    simplex: MSimplexBase<T, U>,
-    base_rate: T,
+    pub simplex: MSimplexBase<T, U>,
+    pub base_rate: T,
 }
 
 impl<T: Display, U: Display> Display for MOpinion<T, U> {
@@ -450,11 +450,6 @@ impl<T, U> MOpinion<T, U> {
     #[inline]
     pub fn u(&self) -> &U {
         &self.simplex.uncertainty
-    }
-
-    #[inline]
-    pub fn a(&self) -> &T {
-        &self.base_rate
     }
 }
 
