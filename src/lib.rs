@@ -873,7 +873,6 @@ macro_rules! impl_msl {
                     let u_xy_inv: [$ft; N] = array::from_fn(|j| {
                         u_xy_marginal[j] * (u_yx_exp + (1.0 - u_yx_exp) * irrelevance_yx[j])
                     });
-                    dbg!(ax, p_yx);
                     let bs: [[$ft; M]; N] =
                         array::from_fn(|j| array::from_fn(|i| p_xy[j][i] - u_xy_inv[j] * ax[i]));
                     (bs, u_xy_inv).into()
@@ -882,7 +881,6 @@ macro_rules! impl_msl {
                 let conds_yx = conds_yx.into();
                 let ay = conds_yx.marginal_base_rate(&ax).or(ay)?;
                 let inv_conds = inverse(conds_yx, &ax, &ay);
-                dbg!(&inv_conds, &ay);
                 let w = MOpinion1dRef::from((self, &ay));
                 Some((w.deduce(inv_conds, ax), ay))
             }
