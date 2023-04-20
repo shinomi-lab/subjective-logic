@@ -1,7 +1,7 @@
 //!
 //! An implementation of [Subjective Logic](https://en.wikipedia.org/wiki/Subjective_logic).
 
-use approx::{relative_eq, relative_ne, AbsDiffEq, RelativeEq};
+use approx::{ulps_eq, ulps_ne, AbsDiffEq, RelativeEq, UlpsEq};
 use std::{array, fmt::Display, ops::Index};
 
 /// A binomial opinion.
@@ -57,7 +57,7 @@ macro_rules! impl_bsl {
             /// # Errors
             /// If even pameter does not satisfy the conditions, an error is returned.
             pub fn try_new(b: $ft, d: $ft, u: $ft, a: $ft) -> Result<Self, InvalidValueError> {
-                if relative_ne!(b + d + u, 1.0) {
+                if ulps_ne!(b + d + u, 1.0) {
                     return Err(InvalidValueError(
                         "b + d + u = 1 is not satisfied".to_string(),
                     ));
@@ -126,7 +126,7 @@ macro_rules! impl_bsl {
                 let b = (self.b() * rhs.u() + rhs.b() * self.u()) / kappa;
                 let d = (self.d() * rhs.u() + rhs.d() * self.u()) / kappa;
                 let u = (self.u() * rhs.u()) / kappa;
-                let a = if relative_eq!(*self.u(), 1.0) && relative_eq!(*rhs.u(), 1.0) {
+                let a = if ulps_eq!(*self.u(), 1.0) && ulps_eq!(*rhs.u(), 1.0) {
                     (self.base_rate + rhs.base_rate) / 2.0
                 } else {
                     (self.base_rate * rhs.u() + rhs.base_rate * self.u()
@@ -142,7 +142,7 @@ macro_rules! impl_bsl {
                 let d;
                 let u;
                 let a;
-                if relative_eq!(*self.u(), 0.0) && relative_eq!(*rhs.u(), 0.0) {
+                if ulps_eq!(*self.u(), 0.0) && ulps_eq!(*rhs.u(), 0.0) {
                     let gamma_b = 1.0 - gamma_a;
                     b = gamma_a * self.b() + gamma_b * rhs.b();
                     d = gamma_a * self.d() + gamma_b * rhs.d();
@@ -164,13 +164,13 @@ macro_rules! impl_bsl {
                 let d;
                 let u;
                 let a;
-                if relative_eq!(*self.u(), 0.0) && relative_eq!(*rhs.u(), 0.0) {
+                if ulps_eq!(*self.u(), 0.0) && ulps_eq!(*rhs.u(), 0.0) {
                     let gamma_b = 1.0 - gamma_a;
                     b = gamma_a * self.b() + gamma_b * rhs.b();
                     d = gamma_a * self.d() + gamma_b * rhs.d();
                     u = 0.0;
                     a = gamma_a * self.base_rate + gamma_b * rhs.base_rate;
-                } else if relative_eq!(*self.u(), 1.0) && relative_eq!(*rhs.u(), 1.0) {
+                } else if ulps_eq!(*self.u(), 1.0) && ulps_eq!(*rhs.u(), 1.0) {
                     b = 0.0;
                     d = 0.0;
                     u = 1.0;
@@ -336,6 +336,19 @@ macro_rules! impl_bsl {
                     && self.d().relative_eq(other.d(), epsilon, max_relative)
                     && self.u().relative_eq(other.u(), epsilon, max_relative)
                     && self.a().relative_eq(other.a(), epsilon, max_relative)
+            }
+        }
+
+        impl UlpsEq for BOpinion<$ft> {
+            fn default_max_ulps() -> u32 {
+                <$ft as UlpsEq>::default_max_ulps()
+            }
+
+            fn ulps_eq(&self, other: &Self, epsilon: Self::Epsilon, max_ulps: u32) -> bool {
+                self.b().ulps_eq(other.b(), epsilon, max_ulps)
+                    && self.d().ulps_eq(other.d(), epsilon, max_ulps)
+                    && self.u().ulps_eq(other.u(), epsilon, max_ulps)
+                    && self.a().ulps_eq(other.a(), epsilon, max_ulps)
             }
         }
     };
@@ -585,7 +598,7 @@ macro_rules! impl_msimplex {
             /// # Errors
             /// If even pameter does not satisfy the conditions, an error is returned.
             pub fn try_new(b: [$ft; N], u: $ft) -> Result<Self, InvalidValueError> {
-                if relative_ne!(b.iter().sum::<$ft>() + u, 1.0) {
+                if ulps_ne!(b.iter().sum::<$ft>() + u, 1.0) {
                     return Err(InvalidValueError(
                         "sum(b) + u = 1 is not satisfied".to_string(),
                     ));
@@ -622,7 +635,7 @@ macro_rules! impl_msimplex {
 
         impl<'a, const M: usize, const N: usize> MSimplexRefs<'a, $ft, N, M> {
             pub fn marginal_base_rate(&self, ax: &[$ft; M]) -> Option<[$ft; N]> {
-                if relative_eq!((0..M).map(|i| self[i].uncertainty).sum::<$ft>(), M as $ft) {
+                if ulps_eq!((0..M).map(|i| self[i].uncertainty).sum::<$ft>(), M as $ft) {
                     None
                 } else {
                     Some(array::from_fn(|j| {
@@ -694,12 +707,12 @@ macro_rules! impl_msl {
             /// # Errors
             /// If even pameter does not satisfy the conditions, an error is returned.
             pub fn try_new(b: [$ft; N], u: $ft, a: [$ft; N]) -> Result<Self, InvalidValueError> {
-                if relative_ne!(b.iter().sum::<$ft>() + u, 1.0) {
+                if ulps_ne!(b.iter().sum::<$ft>() + u, 1.0) {
                     return Err(InvalidValueError(
                         "sum(b) + u = 1 is not satisfied".to_string(),
                     ));
                 }
-                if relative_ne!(a.iter().sum::<$ft>(), 1.0) {
+                if ulps_ne!(a.iter().sum::<$ft>(), 1.0) {
                     return Err(InvalidValueError("sum(a) = 1 is not satisfied".to_string()));
                 }
 
@@ -734,7 +747,7 @@ macro_rules! impl_msl {
                 s: MSimplex<$ft, N>,
                 a: [$ft; N],
             ) -> Result<Self, InvalidValueError> {
-                if relative_ne!(a.iter().sum::<$ft>(), 1.0) {
+                if ulps_ne!(a.iter().sum::<$ft>(), 1.0) {
                     return Err(InvalidValueError("sum(a) = 1 is not satisfied".to_string()));
                 }
                 for i in 0..N {
@@ -781,7 +794,7 @@ macro_rules! impl_msl {
             fn cfuse_al(&self, rhs: MSimplexRef<'a, $ft, N>, gamma_a: $ft) -> Self::Output {
                 let b;
                 let u;
-                if relative_eq!(*self.u(), 0.0) && relative_eq!(**rhs.u(), 0.0) {
+                if ulps_eq!(*self.u(), 0.0) && ulps_eq!(**rhs.u(), 0.0) {
                     let gamma_b = 1.0 - gamma_a;
                     b = array::from_fn(|i| gamma_a * self.b()[i] + gamma_b * rhs.b()[i]);
                     u = 0.0;
@@ -805,7 +818,7 @@ macro_rules! impl_msl {
             fn afuse(&self, rhs: MSimplexRef<'a, $ft, N>, gamma_a: $ft) -> Self::Output {
                 let b;
                 let u;
-                if relative_eq!(*self.u(), 0.0) && relative_eq!(**rhs.u(), 0.0) {
+                if ulps_eq!(*self.u(), 0.0) && ulps_eq!(**rhs.u(), 0.0) {
                     let gamma_b = 1.0 - gamma_a;
                     b = array::from_fn(|i| gamma_a * self.b()[i] + gamma_b * rhs.b()[i]);
                     u = 0.0;
@@ -821,11 +834,11 @@ macro_rules! impl_msl {
             fn wfuse(&self, rhs: MSimplexRef<'a, $ft, N>, gamma_a: $ft) -> Self::Output {
                 let b;
                 let u;
-                if relative_eq!(*self.u(), 0.0) && relative_eq!(**rhs.u(), 0.0) {
+                if ulps_eq!(*self.u(), 0.0) && ulps_eq!(**rhs.u(), 0.0) {
                     let gamma_b = 1.0 - gamma_a;
                     b = array::from_fn(|i| gamma_a * self.b()[i] + gamma_b * rhs.b()[i]);
                     u = 0.0;
-                } else if relative_eq!(*self.u(), 1.0) && relative_eq!(**rhs.u(), 1.0) {
+                } else if ulps_eq!(*self.u(), 1.0) && ulps_eq!(**rhs.u(), 1.0) {
                     b = [0.0; N];
                     u = 1.0;
                 } else {
@@ -852,11 +865,11 @@ macro_rules! impl_msl {
                 let rhs = rhs.into();
                 let sr = MSimplexRef::from(rhs.clone());
                 let s = self.cfuse_al(sr, gamma_a)?;
-                let a = if relative_eq!(*self.u(), 0.0) && relative_eq!(**rhs.u(), 0.0) {
+                let a = if ulps_eq!(*self.u(), 0.0) && ulps_eq!(**rhs.u(), 0.0) {
                     array::from_fn(|i| {
                         gamma_a * self.base_rate[i] + (1.0 - gamma_a) * rhs.base_rate[i]
                     })
-                } else if relative_eq!(*self.u(), 1.0) && relative_eq!(**rhs.u(), 1.0) {
+                } else if ulps_eq!(*self.u(), 1.0) && ulps_eq!(**rhs.u(), 1.0) {
                     array::from_fn(|i| (self.base_rate[i] + rhs.base_rate[i]) / 2.0)
                 } else {
                     let rhs_u = *rhs.u();
@@ -879,7 +892,7 @@ macro_rules! impl_msl {
                 let rhs = rhs.into();
                 let sr = MSimplexRef::from(rhs.clone());
                 let s = self.afuse(sr, gamma_a)?;
-                let a = if relative_eq!(*self.u(), 0.0) && relative_eq!(**rhs.u(), 0.0) {
+                let a = if ulps_eq!(*self.u(), 0.0) && ulps_eq!(**rhs.u(), 0.0) {
                     array::from_fn(|i| {
                         gamma_a * self.base_rate[i] + (1.0 - gamma_a) * rhs.base_rate[i]
                     })
@@ -893,11 +906,11 @@ macro_rules! impl_msl {
                 let rhs = rhs.into();
                 let sr = MSimplexRef::from(rhs.clone());
                 let s = self.wfuse(sr, gamma_a)?;
-                let a = if relative_eq!(*self.u(), 0.0) && relative_eq!(**rhs.u(), 0.0) {
+                let a = if ulps_eq!(*self.u(), 0.0) && ulps_eq!(**rhs.u(), 0.0) {
                     array::from_fn(|i| {
                         gamma_a * self.base_rate[i] + (1.0 - gamma_a) * rhs.base_rate[i]
                     })
-                } else if relative_eq!(*self.u(), 1.0) && relative_eq!(**rhs.u(), 1.0) {
+                } else if ulps_eq!(*self.u(), 1.0) && ulps_eq!(**rhs.u(), 1.0) {
                     array::from_fn(|i| (self.base_rate[i] + rhs.base_rate[i]) / 2.0)
                 } else {
                     let rhs_u = *rhs.u();
@@ -1142,12 +1155,12 @@ macro_rules! impl_epsilon {
     ($ft: ty) => {
         impl ApproxRange for $ft {
             fn is_in_range(self, from: Self, to: Self) -> bool {
-                (self >= from && self <= to) || relative_eq!(self, from) || relative_eq!(self, to)
+                (self >= from && self <= to) || ulps_eq!(self, from) || ulps_eq!(self, to)
             }
         }
         impl ApproxRange for &$ft {
             fn is_in_range(self, from: Self, to: Self) -> bool {
-                (self >= from && self <= to) || relative_eq!(self, from) || relative_eq!(self, to)
+                (self >= from && self <= to) || ulps_eq!(self, from) || ulps_eq!(self, to)
             }
         }
     };
@@ -1158,7 +1171,7 @@ impl_epsilon!(f64);
 
 #[cfg(test)]
 mod tests {
-    use approx::assert_relative_eq;
+    use approx::{assert_relative_eq, assert_ulps_eq};
 
     use crate::{Abduction, BOpinion, Deduction, Fusion, MOpinion1d, MSimplex};
 
@@ -1274,11 +1287,16 @@ mod tests {
         let w3 = BOpinion::<f32>::new(0.0, 0.6, 0.4, 0.5);
 
         assert_relative_eq!(w1.wfuse(&w0, 0.5).unwrap(), w1);
+        assert_ulps_eq!(w1.wfuse(&w0, 0.5).unwrap(), w1);
         assert_relative_eq!(w2.wfuse(&w0, 0.5).unwrap(), w2);
+        assert_ulps_eq!(w2.wfuse(&w0, 0.5).unwrap(), w2);
         assert_relative_eq!(w3.wfuse(&w0, 0.5).unwrap(), w3);
+        assert_ulps_eq!(w3.wfuse(&w0, 0.5).unwrap(), w3);
 
         assert_relative_eq!(w2.wfuse(&w2, 0.5).unwrap(), w2);
+        assert_ulps_eq!(w2.wfuse(&w2, 0.5).unwrap(), w2);
         assert_relative_eq!(w3.wfuse(&w3, 0.5).unwrap(), w3);
+        assert_ulps_eq!(w3.wfuse(&w3, 0.5).unwrap(), w3);
     }
 
     #[test]
