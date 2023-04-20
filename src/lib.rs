@@ -617,12 +617,57 @@ macro_rules! impl_msl {
                 Ok(Self::new_unchecked(b, u, a))
             }
 
-            /// Creates a new binomial opinion from parameters which reqiure the same conditions as `try_new`.
+            /// Creates a new multinomial opinion from parameters which reqiure the same conditions as `try_new`.
             ///
             /// # Panics
             /// Panics if even pameter does not satisfy the conditions.
             pub fn new(b: [$ft; N], u: $ft, a: [$ft; N]) -> Self {
                 Self::try_new(b, u, a).unwrap()
+            }
+
+            /// Returns the uncertainty maximized opinion of `self`.
+            pub fn max_uncertainty(&self) -> Result<Self, InvalidValueError> {
+                let u_max = (0..N)
+                    .map(|i| self.projection(i) / self.base_rate[i])
+                    .reduce(<$ft>::min)
+                    .unwrap();
+                let b_max = array::from_fn(|i| self.projection(i) - self.base_rate[i] * u_max);
+                Self::try_new(b_max, u_max, self.base_rate.clone())
+            }
+
+            /// Computes the aleatory cummulative fusion of `self` and `rhs`.
+            pub fn cfuse_al(&self, rhs: &Self, gamma_a: $ft) -> Result<Self, InvalidValueError> {
+                let b;
+                let u;
+                let a;
+                if self.u().approx_eq(&0.0) && rhs.u().approx_eq(&0.0) {
+                    let gamma_b = 1.0 - gamma_a;
+                    b = array::from_fn(|i| gamma_a * self.b()[i] + gamma_b * rhs.b()[i]);
+                    u = 0.0;
+                    a = array::from_fn(|i| {
+                        gamma_a * self.base_rate[i] + gamma_b * rhs.base_rate[i]
+                    });
+                } else {
+                    let temp = self.u() + rhs.u() - self.u() * rhs.u();
+                    b = array::from_fn(|i| (self.b()[i] * rhs.u() + rhs.b()[i] * self.u()) / temp);
+                    u = self.u() * rhs.u() / temp;
+                    a = if self.u().approx_eq(&1.0) && rhs.u().approx_eq(&1.0) {
+                        array::from_fn(|i| (self.base_rate[i] + rhs.base_rate[i]) / 2.0)
+                    } else {
+                        array::from_fn(|i| {
+                            (self.base_rate[i] * rhs.u() + rhs.base_rate[i] * self.u()
+                                - (self.base_rate[i] + rhs.base_rate[i]) * self.u() * rhs.u())
+                                / (temp - self.u() * rhs.u())
+                        })
+                    }
+                }
+                Self::try_new(b, u, a)
+            }
+
+            /// Computes the epistemic cummulative fusion of `self` and `rhs`.
+            pub fn cfuse_ep(&self, rhs: &Self, gamma_a: $ft) -> Result<Self, InvalidValueError> {
+                let w = self.cfuse_al(rhs, gamma_a)?;
+                w.max_uncertainty()
             }
 
             /// Computes the averaging belief fusion of `self` and `rhs`.
@@ -828,6 +873,7 @@ macro_rules! impl_msl {
                     let u_xy_inv: [$ft; N] = array::from_fn(|j| {
                         u_xy_marginal[j] * (u_yx_exp + (1.0 - u_yx_exp) * irrelevance_yx[j])
                     });
+                    dbg!(ax, p_yx);
                     let bs: [[$ft; M]; N] =
                         array::from_fn(|j| array::from_fn(|i| p_xy[j][i] - u_xy_inv[j] * ax[i]));
                     (bs, u_xy_inv).into()
@@ -836,6 +882,7 @@ macro_rules! impl_msl {
                 let conds_yx = conds_yx.into();
                 let ay = conds_yx.marginal_base_rate(&ax).or(ay)?;
                 let inv_conds = inverse(conds_yx, &ax, &ay);
+                dbg!(&inv_conds, &ay);
                 let w = MOpinion1dRef::from((self, &ay));
                 Some((w.deduce(inv_conds, ax), ay))
             }
@@ -1018,7 +1065,23 @@ mod tests {
     }
 
     #[test]
-    fn test_cum_fuse() {
+    fn test_cfuse_al_mul() {
+        let w1 = MOpinion1d::<f32, 2>::new([0.0, 0.3], 0.7, [0.7, 0.3]);
+        let w2 = MOpinion1d::<f32, 2>::new([0.7, 0.0], 0.3, [0.3, 0.7]);
+        println!("{:?}", w1.cfuse_al(&w2, 0.0));
+    }
+
+    #[test]
+    fn test_cfuse_ep_mul() {
+        let w1 =
+            MOpinion1d::<f32, 3>::new([0.98, 0.01, 0.0], 0.01, [1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0]);
+        let w2 =
+            MOpinion1d::<f32, 3>::new([0.0, 0.01, 0.90], 0.09, [1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0]);
+        println!("{:?}", w1.cfuse_ep(&w2, 0.0).unwrap());
+    }
+
+    #[test]
+    fn test_cum_fusion_bo() {
         let w0 = BOpinion::<f32>::new(0.5, 0.0, 0.5, 0.5);
         let w1 = BOpinion::<f32>::new(0.0, 0.0, 1.0, 0.5);
         let w2 = BOpinion::<f32>::new(0.0, 0.0, 1.0, 0.5);
@@ -1169,12 +1232,12 @@ mod tests {
     fn test_abduction2() {
         let ax = [0.01, 0.495, 0.495];
         let conds_ox = [
-            MSimplex::<f32, 2>::new([0.0, 0.0], 1.0),
-            MSimplex::<f32, 2>::new([0.0, 0.0], 1.0),
-            MSimplex::<f32, 2>::new([0.0, 0.0], 1.0),
+            MSimplex::<f32, 2>::new([0.5, 0.0], 0.5),
+            MSimplex::<f32, 2>::new([0.5, 0.0], 0.5),
+            MSimplex::<f32, 2>::new([0.01, 0.01], 0.98),
         ];
         let mw_o = MSimplex::<f32, 2>::new([0.0, 0.0], 1.0);
-        let (mw_x, _) = mw_o.abduce(&conds_ox, ax, Some([0.5, 0.5])).unwrap();
+        let (mw_x, _) = mw_o.abduce(&conds_ox, ax, None).unwrap();
         println!("{:?}", mw_x);
     }
 }
