@@ -19,7 +19,7 @@ impl<T: Display> Display for BOpinion<T> {
 impl<T> BOpinion<T> {
     fn new_unchecked(b: T, d: T, u: T, a: T) -> Self {
         Self {
-            simplex: MSimplex::new([b, d], u),
+            simplex: MSimplex::new_unchecked([b, d], u),
             base_rate: a,
         }
     }
@@ -311,25 +311,26 @@ impl_bsl!(f32);
 impl_bsl!(f64);
 
 /// The simplex of a binomial opinion, from which a base rate is excluded.
-pub type BSimplexRef<'a, T> = MSimplexRef<'a, T, 2>;
+#[derive(Debug)]
+pub struct BSimplexRef<'a, T>(MSimplexRef<'a, T, 2>);
 
 impl<'a, T> BSimplexRef<'a, T> {
     fn b(&self) -> &T {
-        &self.belief[0]
+        &self.0.belief[0]
     }
 
     fn d(&self) -> &T {
-        &self.belief[1]
+        &self.0.belief[1]
     }
 
     fn u(&self) -> &T {
-        self.uncertainty
+        self.0.uncertainty
     }
 }
 
 impl<'a, T> From<&'a BOpinion<T>> for BSimplexRef<'a, T> {
     fn from(value: &'a BOpinion<T>) -> Self {
-        value.simplex.borrow()
+        Self(value.simplex.borrow())
     }
 }
 
@@ -352,8 +353,76 @@ impl<'a, T, const M: usize> From<&'a [BOpinion<T>; M]> for BSimplexRefs<'a, T, M
     }
 }
 
-/// The generlized structure of a multinomial opinion.
+#[derive(Debug, Clone)]
+pub struct MSimplexBase<T, U> {
+    belief: T,
+    uncertainty: U,
+}
+
+impl<T: Display, U: Display> Display for MSimplexBase<T, U> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{},{}", self.belief, self.uncertainty)
+    }
+}
+
+pub type MSimplexBaseRef<'a, T, U> = MSimplexBase<&'a T, &'a U>;
+
+impl<T, U> MSimplexBase<T, U> {
+    pub fn new_unchecked(b: T, u: U) -> Self {
+        Self {
+            belief: b,
+            uncertainty: u,
+        }
+    }
+
+    pub fn borrow(&self) -> MSimplexBaseRef<'_, T, U> {
+        MSimplexBaseRef {
+            belief: &self.belief,
+            uncertainty: &self.uncertainty,
+        }
+    }
+
+    #[inline]
+    pub fn b(&self) -> &T {
+        &self.belief
+    }
+
+    #[inline]
+    pub fn u(&self) -> &U {
+        &self.uncertainty
+    }
+}
+
+/// The reference of a simplex of a multinomial opinion, from which a base rate is excluded.
+pub type MSimplex<T, const N: usize> = MSimplexBase<[T; N], T>;
+
+/// The reference type of a simplex of a multinomial opinion, from which a base rate is excluded.
+pub type MSimplexRef<'a, T, const N: usize> = MSimplexBaseRef<'a, [T; N], T>;
+
 #[derive(Debug)]
+pub struct MSimplexRefs<'a, T, const M: usize, const N: usize>([MSimplexRef<'a, T, M>; N]);
+
+impl<'a, I, T, const M: usize, const N: usize> Index<I> for MSimplexRefs<'a, T, M, N>
+where
+    [MSimplexRef<'a, T, M>]: Index<I>,
+{
+    type Output = <[MSimplexRef<'a, T, M>; N] as Index<I>>::Output;
+
+    fn index(&self, index: I) -> &Self::Output {
+        self.0.index(index)
+    }
+}
+
+impl<'a, T, const N: usize, const M: usize> From<&'a [MSimplex<T, N>; M]>
+    for MSimplexRefs<'a, T, N, M>
+{
+    fn from(value: &'a [MSimplex<T, N>; M]) -> Self {
+        MSimplexRefs(array::from_fn(|i| (&value[i]).borrow()))
+    }
+}
+
+/// The generlized structure of a multinomial opinion.
+#[derive(Debug, Clone)]
 pub struct MOpinion<T, U> {
     simplex: MSimplexBase<T, U>,
     base_rate: T,
@@ -368,7 +437,7 @@ impl<T: Display, U: Display> Display for MOpinion<T, U> {
 impl<T, U> MOpinion<T, U> {
     fn new_unchecked(b: T, u: U, a: T) -> Self {
         Self {
-            simplex: MSimplexBase::new(b, u),
+            simplex: MSimplexBase::new_unchecked(b, u),
             base_rate: a,
         }
     }
@@ -418,59 +487,24 @@ impl<'a, T, U> From<&'a MOpinion<T, U>> for MOpinionRef<'a, T, U> {
     }
 }
 
+impl<'a, T, U> From<MOpinionRef<'a, T, U>> for MSimplexBaseRef<'a, T, U> {
+    fn from(value: MOpinionRef<'a, T, U>) -> Self {
+        MSimplexBase {
+            belief: value.simplex.belief,
+            uncertainty: value.simplex.uncertainty,
+        }
+    }
+}
+
 /// A multinomial opinion with 1-dimensional vectors.
 pub type MOpinion1d<T, const N: usize> = MOpinion<[T; N], T>;
 
 /// The reference type of a multinomial opinion with 1-dimensional vectors.
 pub type MOpinion1dRef<'a, T, const N: usize> = MOpinionRef<'a, [T; N], T>;
 
-#[derive(Debug)]
-pub struct MSimplexBase<T, U> {
-    belief: T,
-    uncertainty: U,
-}
-
-impl<T: Display, U: Display> Display for MSimplexBase<T, U> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{},{}", self.belief, self.uncertainty)
-    }
-}
-
-pub type MSimplexBaseRef<'a, T, U> = MSimplexBase<&'a T, &'a U>;
-
-impl<T, U> MSimplexBase<T, U> {
-    pub fn new(b: T, u: U) -> Self {
-        Self {
-            belief: b,
-            uncertainty: u,
-        }
-    }
-
-    pub fn borrow(&self) -> MSimplexBaseRef<'_, T, U> {
-        MSimplexBaseRef {
-            belief: &self.belief,
-            uncertainty: &self.uncertainty,
-        }
-    }
-}
-
-/// The reference of a simplex of a multinomial opinion, from which a base rate is excluded.
-pub type MSimplex<T, const N: usize> = MSimplexBase<[T; N], T>;
-
-/// The reference type of a simplex of a multinomial opinion, from which a base rate is excluded.
-pub type MSimplexRef<'a, T, const N: usize> = MSimplexBaseRef<'a, [T; N], T>;
-
-#[derive(Debug)]
-pub struct MSimplexRefs<'a, T, const M: usize, const N: usize>([MSimplexRef<'a, T, M>; N]);
-
-impl<'a, I, T, const M: usize, const N: usize> Index<I> for MSimplexRefs<'a, T, M, N>
-where
-    [MSimplexRef<'a, T, M>]: Index<I>,
-{
-    type Output = <[MSimplexRef<'a, T, M>; N] as Index<I>>::Output;
-
-    fn index(&self, index: I) -> &Self::Output {
-        self.0.index(index)
+impl<'a, T, const N: usize> From<&'a [BOpinion<T>; N]> for MSimplexRefs<'a, T, 2, N> {
+    fn from(value: &'a [BOpinion<T>; N]) -> Self {
+        MSimplexRefs(array::from_fn(|i| value[i].simplex.borrow()))
     }
 }
 
@@ -479,20 +513,6 @@ impl<'a, T, const N: usize, const M: usize> From<&'a [MOpinion1d<T, N>; M]>
 {
     fn from(value: &'a [MOpinion1d<T, N>; M]) -> Self {
         MSimplexRefs(array::from_fn(|i| (&value[i].simplex).borrow()))
-    }
-}
-
-impl<'a, T, const N: usize, const M: usize> From<&'a [MSimplex<T, N>; M]>
-    for MSimplexRefs<'a, T, N, M>
-{
-    fn from(value: &'a [MSimplex<T, N>; M]) -> Self {
-        MSimplexRefs(array::from_fn(|i| (&value[i]).borrow()))
-    }
-}
-
-impl<'a, T, const N: usize> From<&'a [BOpinion<T>; N]> for MSimplexRefs<'a, T, 2, N> {
-    fn from(value: &'a [BOpinion<T>; N]) -> Self {
-        MSimplexRefs(array::from_fn(|i| (&value[i]).into()))
     }
 }
 
@@ -515,13 +535,35 @@ impl<'a, T, const M: usize, const N: usize> From<([[T; M]; N], [T; N])> for MSim
         MSimplexes(array::from_fn(|i| {
             let b = bs.swap_remove(N - 1 - i);
             let u = us.swap_remove(N - 1 - i);
-            MSimplex::new(b, u)
+            MSimplex::new_unchecked(b, u)
         }))
     }
 }
 
 macro_rules! impl_msimplex {
     ($ft: ty) => {
+        impl<const N: usize> MSimplex<$ft, N> {
+            pub fn try_new(b: [$ft; N], u: $ft) -> Result<Self, InvalidValueError> {
+                if !(b.iter().sum::<$ft>() + u).approx_eq(1.0) {
+                    return Err(InvalidValueError(
+                        "sum(b) + u = 1 is not satisfied".to_string(),
+                    ));
+                }
+                if !u.is_in_range(0.0, 1.0) {
+                    return Err(InvalidValueError(format!("u ∈ [0,1] is not satisfied")));
+                }
+
+                for i in 0..N {
+                    if !b[i].is_in_range(0.0, 1.0) {
+                        return Err(InvalidValueError(format!(
+                            "b[{i}] ∈ [0,1] is not satisfied"
+                        )));
+                    }
+                }
+                Ok(Self::new_unchecked(b, u))
+            }
+        }
+
         impl<'a, const N: usize> MSimplexRef<'a, $ft, N> {
             pub fn projection(&self, a: &[$ft; N]) -> [$ft; N] {
                 array::from_fn(|i| self.belief[i] + self.uncertainty * a[i])
@@ -555,12 +597,28 @@ macro_rules! impl_msimplex {
 impl_msimplex!(f32);
 impl_msimplex!(f64);
 
+pub trait Fusion<Rhs, U> {
+    type Output;
+
+    /// Computes the aleatory cummulative fusion of `self` and `rhs`.
+    fn cfuse_al(&self, rhs: Rhs, gamma_a: U) -> Self::Output;
+
+    /// Computes the epistemic cummulative fusion of `self` and `rhs`.
+    fn cfuse_ep(&self, rhs: Rhs, gamma_a: U) -> Self::Output;
+
+    /// Computes the averaging belief fusion of `self` and `rhs`.
+    fn afuse(&self, rhs: Rhs, gamma_a: U) -> Self::Output;
+
+    /// Computes the weighted belief fusion of `self` and `rhs`.
+    fn wfuse(&self, rhs: Rhs, gamma_a: U) -> Self::Output;
+}
+
 /// The deduction operator.
 pub trait Deduction<Rhs, U> {
     type Output;
 
     /// Computes the conditionally deduced opinion of `self` with a base rate vector `ay`
-    /// by `cond` representing a collection of conditional opinions.
+    /// by `conds` representing a collection of conditional opinions.
     fn deduce(self, conds: Rhs, ay: U) -> Self::Output;
 }
 
@@ -568,8 +626,9 @@ pub trait Deduction<Rhs, U> {
 pub trait Abduction<Rhs, U, V>: Sized {
     type Output;
 
-    /// Computes the conditionally abduced opinion of `self` with a base rate vector `ay`
-    /// by `cond` representing a collection of conditional opinions.
+    /// Computes the conditionally abduced opinion of `self` with a base rate vector `ax`
+    /// by `conds` representing a collection of conditional opinions.
+    /// If a marginal base rate cannot be computed from `conds`, ay is used instead.
     fn abduce(self, conds: Rhs, ax: U, ay: Option<V>) -> Option<(Self::Output, V)>;
 }
 
@@ -625,102 +684,184 @@ macro_rules! impl_msl {
                 Self::try_new(b, u, a).unwrap()
             }
 
+            pub fn try_from_simplex(
+                s: MSimplex<$ft, N>,
+                a: [$ft; N],
+            ) -> Result<Self, InvalidValueError> {
+                if !a.iter().sum::<$ft>().approx_eq(1.0) {
+                    return Err(InvalidValueError("sum(a) = 1 is not satisfied".to_string()));
+                }
+                for i in 0..N {
+                    if !a[i].is_in_range(0.0, 1.0) {
+                        return Err(InvalidValueError(format!(
+                            "a[{i}] ∈ [0,1] is not satisfied"
+                        )));
+                    }
+                }
+                Ok(Self {
+                    simplex: s,
+                    base_rate: a,
+                })
+            }
+
             /// Returns the uncertainty maximized opinion of `self`.
-            pub fn max_uncertainty(&self) -> Result<Self, InvalidValueError> {
-                let u_max = (0..N)
+            pub fn max_uncertainty(&self) -> $ft {
+                (0..N)
                     .map(|i| self.projection(i) / self.base_rate[i])
                     .reduce(<$ft>::min)
-                    .unwrap();
+                    .unwrap()
+            }
+
+            /// Returns the uncertainty maximized opinion of `self`.
+            pub fn op_u_max(&self) -> Result<Self, InvalidValueError> {
+                let u_max = self.max_uncertainty();
                 let b_max = array::from_fn(|i| self.projection(i) - self.base_rate[i] * u_max);
                 Self::try_new(b_max, u_max, self.base_rate.clone())
             }
+        }
 
-            /// Computes the aleatory cummulative fusion of `self` and `rhs`.
-            pub fn cfuse_al(&self, rhs: &Self, gamma_a: $ft) -> Result<Self, InvalidValueError> {
+        impl<'a, const N: usize> MOpinion1dRef<'a, $ft, N> {
+            /// Returns the uncertainty maximized opinion of `self`.
+            pub fn max_uncertainty(&self) -> $ft {
+                (0..N)
+                    .map(|i| self.projection(i) / self.base_rate[i])
+                    .reduce(<$ft>::min)
+                    .unwrap()
+            }
+        }
+
+        impl<'a, const N: usize> Fusion<MSimplexRef<'a, $ft, N>, $ft> for MOpinion1d<$ft, N> {
+            type Output = Result<MSimplex<$ft, N>, InvalidValueError>;
+            fn cfuse_al(&self, rhs: MSimplexRef<'a, $ft, N>, gamma_a: $ft) -> Self::Output {
                 let b;
                 let u;
-                let a;
                 if self.u().approx_eq(&0.0) && rhs.u().approx_eq(&0.0) {
                     let gamma_b = 1.0 - gamma_a;
                     b = array::from_fn(|i| gamma_a * self.b()[i] + gamma_b * rhs.b()[i]);
                     u = 0.0;
-                    a = array::from_fn(|i| {
-                        gamma_a * self.base_rate[i] + gamma_b * rhs.base_rate[i]
-                    });
                 } else {
-                    let temp = self.u() + rhs.u() - self.u() * rhs.u();
-                    b = array::from_fn(|i| (self.b()[i] * rhs.u() + rhs.b()[i] * self.u()) / temp);
-                    u = self.u() * rhs.u() / temp;
-                    a = if self.u().approx_eq(&1.0) && rhs.u().approx_eq(&1.0) {
-                        array::from_fn(|i| (self.base_rate[i] + rhs.base_rate[i]) / 2.0)
-                    } else {
-                        array::from_fn(|i| {
-                            (self.base_rate[i] * rhs.u() + rhs.base_rate[i] * self.u()
-                                - (self.base_rate[i] + rhs.base_rate[i]) * self.u() * rhs.u())
-                                / (temp - self.u() * rhs.u())
-                        })
-                    }
+                    let rhs_u = *rhs.u();
+                    let temp = self.u() + rhs_u - self.u() * rhs_u;
+                    b = array::from_fn(|i| (self.b()[i] * rhs_u + rhs.b()[i] * self.u()) / temp);
+                    u = self.u() * rhs_u / temp;
                 }
-                Self::try_new(b, u, a)
+                MSimplex::<$ft, N>::try_new(b, u)
             }
 
-            /// Computes the epistemic cummulative fusion of `self` and `rhs`.
-            pub fn cfuse_ep(&self, rhs: &Self, gamma_a: $ft) -> Result<Self, InvalidValueError> {
-                let w = self.cfuse_al(rhs, gamma_a)?;
-                w.max_uncertainty()
+            fn cfuse_ep(&self, rhs: MSimplexRef<'a, $ft, N>, gamma_a: $ft) -> Self::Output {
+                let s = self.cfuse_al(rhs, gamma_a)?;
+                let w = MOpinion1dRef::from((s.borrow(), &self.base_rate));
+                let u_max = w.max_uncertainty();
+                let b_max = array::from_fn(|i| w.projection(i) - w.base_rate[i] * u_max);
+                MSimplex::<$ft, N>::try_new(b_max, u_max)
             }
 
-            /// Computes the averaging belief fusion of `self` and `rhs`.
-            pub fn afuse(&self, rhs: &Self, gamma_a: $ft) -> Result<Self, InvalidValueError> {
+            fn afuse(&self, rhs: MSimplexRef<'a, $ft, N>, gamma_a: $ft) -> Self::Output {
                 let b;
                 let u;
-                let a;
                 if self.u().approx_eq(&0.0) && rhs.u().approx_eq(&0.0) {
                     let gamma_b = 1.0 - gamma_a;
                     b = array::from_fn(|i| gamma_a * self.b()[i] + gamma_b * rhs.b()[i]);
                     u = 0.0;
-                    a = array::from_fn(|i| {
-                        gamma_a * self.base_rate[i] + gamma_b * rhs.base_rate[i]
-                    });
                 } else {
-                    let upu = self.u() + rhs.u();
-                    b = array::from_fn(|i| (self.b()[i] * rhs.u() + rhs.b()[i] * self.u()) / upu);
-                    u = 2.0 * self.u() * rhs.u() / upu;
-                    a = array::from_fn(|i| (self.base_rate[i] + rhs.base_rate[i]) / 2.0);
+                    let rhs_u = *rhs.u();
+                    let upu = self.u() + rhs_u;
+                    b = array::from_fn(|i| (self.b()[i] * rhs_u + rhs.b()[i] * self.u()) / upu);
+                    u = 2.0 * self.u() * rhs_u / upu;
                 }
-                Self::try_new(b, u, a)
+                MSimplex::<$ft, N>::try_new(b, u)
             }
 
-            /// Computes the weighted belief fusion of `self` and `rhs`.
-            pub fn wfuse(&self, rhs: &Self, gamma_a: $ft) -> Result<Self, InvalidValueError> {
+            fn wfuse(&self, rhs: MSimplexRef<'a, $ft, N>, gamma_a: $ft) -> Self::Output {
                 let b;
                 let u;
-                let a;
                 if self.u().approx_eq(&0.0) && rhs.u().approx_eq(&0.0) {
                     let gamma_b = 1.0 - gamma_a;
                     b = array::from_fn(|i| gamma_a * self.b()[i] + gamma_b * rhs.b()[i]);
                     u = 0.0;
-                    a = array::from_fn(|i| {
-                        gamma_a * self.base_rate[i] + gamma_b * rhs.base_rate[i]
-                    });
                 } else if self.u().approx_eq(&1.0) && rhs.u().approx_eq(&1.0) {
                     b = [0.0; N];
                     u = 1.0;
-                    a = array::from_fn(|i| (self.base_rate[i] + rhs.base_rate[i]) / 2.0);
                 } else {
-                    let denom = self.u() + rhs.u() - 2.0 * self.u() * rhs.u();
+                    let rhs_u = *rhs.u();
+                    let denom = self.u() + rhs_u - 2.0 * self.u() * rhs_u;
                     let ca = 1.0 - self.u();
-                    let cb = 1.0 - rhs.u();
+                    let cb = 1.0 - rhs_u;
                     b = array::from_fn(|i| {
-                        (self.b()[i] * ca * rhs.u() + rhs.b()[i] * cb * self.u()) / denom
+                        (self.b()[i] * ca * rhs_u + rhs.b()[i] * cb * self.u()) / denom
                     });
-                    u = (2.0 - self.u() - rhs.u()) * self.u() * rhs.u() / denom;
-                    a = array::from_fn(|i| {
-                        (self.base_rate[i] * ca + rhs.base_rate[i] * cb)
-                            / (2.0 - self.u() - rhs.u())
-                    });
+                    u = (2.0 - self.u() - rhs_u) * self.u() * rhs_u / denom;
                 }
-                Self::try_new(b, u, a)
+                MSimplex::<$ft, N>::try_new(b, u)
+            }
+        }
+
+        impl<'a, A, const N: usize> Fusion<A, $ft> for MOpinion1d<$ft, N>
+        where
+            A: Into<MOpinion1dRef<'a, $ft, N>>,
+        {
+            type Output = Result<Self, InvalidValueError>;
+
+            fn cfuse_al(&self, rhs: A, gamma_a: $ft) -> Self::Output {
+                let rhs = rhs.into();
+                let sr = MSimplexRef::from(rhs.clone());
+                let s = self.cfuse_al(sr, gamma_a)?;
+                let a = if self.u().approx_eq(&0.0) && rhs.u().approx_eq(&0.0) {
+                    array::from_fn(|i| {
+                        gamma_a * self.base_rate[i] + (1.0 - gamma_a) * rhs.base_rate[i]
+                    })
+                } else if self.u().approx_eq(&1.0) && rhs.u().approx_eq(&1.0) {
+                    array::from_fn(|i| (self.base_rate[i] + rhs.base_rate[i]) / 2.0)
+                } else {
+                    let rhs_u = *rhs.u();
+                    array::from_fn(|i| {
+                        (self.base_rate[i] * rhs_u + rhs.base_rate[i] * self.u()
+                            - (self.base_rate[i] + rhs.base_rate[i]) * self.u() * rhs_u)
+                            / (self.u() + rhs_u - self.u() * rhs_u * 2.0)
+                    })
+                };
+                dbg!(a);
+                Self::try_from_simplex(s, a)
+            }
+
+            fn cfuse_ep(&self, rhs: A, gamma_a: $ft) -> Self::Output {
+                let w = self.cfuse_al(rhs, gamma_a)?;
+                w.op_u_max()
+            }
+
+            fn afuse(&self, rhs: A, gamma_a: $ft) -> Self::Output {
+                let rhs = rhs.into();
+                let sr = MSimplexRef::from(rhs.clone());
+                let s = self.afuse(sr, gamma_a)?;
+                let a = if self.u().approx_eq(&0.0) && rhs.u().approx_eq(&0.0) {
+                    array::from_fn(|i| {
+                        gamma_a * self.base_rate[i] + (1.0 - gamma_a) * rhs.base_rate[i]
+                    })
+                } else {
+                    array::from_fn(|i| (self.base_rate[i] + rhs.base_rate[i]) / 2.0)
+                };
+                Self::try_from_simplex(s, a)
+            }
+
+            fn wfuse(&self, rhs: A, gamma_a: $ft) -> Self::Output {
+                let rhs = rhs.into();
+                let sr = MSimplexRef::from(rhs.clone());
+                let s = self.wfuse(sr, gamma_a)?;
+                let a = if self.u().approx_eq(&0.0) && rhs.u().approx_eq(&0.0) {
+                    array::from_fn(|i| {
+                        gamma_a * self.base_rate[i] + (1.0 - gamma_a) * rhs.base_rate[i]
+                    })
+                } else if self.u().approx_eq(&1.0) && rhs.u().approx_eq(&1.0) {
+                    array::from_fn(|i| (self.base_rate[i] + rhs.base_rate[i]) / 2.0)
+                } else {
+                    let rhs_u = *rhs.u();
+                    let ca = 1.0 - self.u();
+                    let cb = 1.0 - rhs_u;
+                    array::from_fn(|i| {
+                        (self.base_rate[i] * ca + rhs.base_rate[i] * cb) / (2.0 - self.u() - rhs_u)
+                    })
+                };
+                Self::try_from_simplex(s, a)
             }
         }
 
@@ -994,7 +1135,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::{Abduction, BOpinion, Deduction, EpsilonEq, MOpinion1d, MSimplex};
+    use crate::{Abduction, BOpinion, Deduction, EpsilonEq, Fusion, MOpinion1d, MSimplex};
 
     #[test]
     fn test_bsl_boundary() {
@@ -1066,7 +1207,7 @@ mod tests {
     fn test_cfuse_al_mul() {
         let w1 = MOpinion1d::<f32, 2>::new([0.0, 0.3], 0.7, [0.7, 0.3]);
         let w2 = MOpinion1d::<f32, 2>::new([0.7, 0.0], 0.3, [0.3, 0.7]);
-        println!("{:?}", w1.cfuse_al(&w2, 0.0));
+        println!("{:?}", w1.cfuse_al(&w2, 0.0).unwrap());
     }
 
     #[test]
@@ -1216,12 +1357,12 @@ mod tests {
     #[test]
     fn test_abduction() {
         let conds = [
-            MSimplex::<f32, 3>::new([0.25, 0.04, 0.00], 0.71),
-            MSimplex::<f32, 3>::new([0.00, 0.50, 0.50], 0.00),
-            MSimplex::<f32, 3>::new([0.00, 0.25, 0.75], 0.00),
+            MSimplex::<f32, 3>::new_unchecked([0.25, 0.04, 0.00], 0.71),
+            MSimplex::<f32, 3>::new_unchecked([0.00, 0.50, 0.50], 0.00),
+            MSimplex::<f32, 3>::new_unchecked([0.00, 0.25, 0.75], 0.00),
         ];
         let ax = [0.70, 0.20, 0.10];
-        let wy = MSimplex::<f32, 3>::new([0.00, 0.43, 0.00], 0.57);
+        let wy = MSimplex::<f32, 3>::new_unchecked([0.00, 0.43, 0.00], 0.57);
         let (wx, ay) = wy.abduce(&conds, ax, None).unwrap();
         println!("{:?}, {:?}", wx, ay);
     }
@@ -1230,11 +1371,11 @@ mod tests {
     fn test_abduction2() {
         let ax = [0.01, 0.495, 0.495];
         let conds_ox = [
-            MSimplex::<f32, 2>::new([0.5, 0.0], 0.5),
-            MSimplex::<f32, 2>::new([0.5, 0.0], 0.5),
-            MSimplex::<f32, 2>::new([0.01, 0.01], 0.98),
+            MSimplex::<f32, 2>::new_unchecked([0.5, 0.0], 0.5),
+            MSimplex::<f32, 2>::new_unchecked([0.5, 0.0], 0.5),
+            MSimplex::<f32, 2>::new_unchecked([0.01, 0.01], 0.98),
         ];
-        let mw_o = MSimplex::<f32, 2>::new([0.0, 0.0], 1.0);
+        let mw_o = MSimplex::<f32, 2>::new_unchecked([0.0, 0.0], 1.0);
         let (mw_x, _) = mw_o.abduce(&conds_ox, ax, None).unwrap();
         println!("{:?}", mw_x);
     }
