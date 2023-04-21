@@ -987,33 +987,34 @@ macro_rules! impl_deduction {
             }
         }
 
-        impl<'a, A, const M: usize, const N: usize> Deduction<&'a [A; M], [$ft; N]>
-            for &'a MOpinion1d<$ft, M>
+        // impl<'a, A, const M: usize, const N: usize> Deduction<&'a [A; M], [$ft; N]>
+        //     for MOpinion1dRef<'a, $ft, M>
+        // where
+        //     &'a A: Into<&'a MSimplex<$ft, N>>,
+        // {
+        //     type Output = MOpinion1d<$ft, N>;
+
+        //     fn deduce(self, conds: &'a [A; M], ay: [$ft; N]) -> Self::Output {
+        //         MOpinion1dRef::from(self).deduce(conds, ay)
+        //     }
+        // }
+
+        impl<'a, A, B, const M: usize, const N: usize> Deduction<&'a [A; M], [$ft; N]> for B
         where
             &'a A: Into<&'a MSimplex<$ft, N>>,
+            B: Into<MOpinion1dRef<'a, $ft, M>>,
         {
             type Output = MOpinion1d<$ft, N>;
 
             fn deduce(self, conds: &'a [A; M], ay: [$ft; N]) -> Self::Output {
-                MOpinion1dRef::from(self).deduce(conds, ay)
-            }
-        }
-
-        impl<'a, A, const M: usize, const N: usize> Deduction<&'a [A; M], [$ft; N]>
-            for MOpinion1dRef<'a, $ft, M>
-        where
-            &'a A: Into<&'a MSimplex<$ft, N>>,
-        {
-            type Output = MOpinion1d<$ft, N>;
-
-            fn deduce(self, conds: &'a [A; M], ay: [$ft; N]) -> Self::Output {
+                let w = self.into();
                 assert!(M > 0 && N > 1, "N > 0 and M > 1 must hold.");
                 let conds: [&MSimplex<$ft, N>; M] = each_into(conds);
-                let ay = conds.marginal_base_rate(&self.base_rate).unwrap_or(ay);
+                let ay = conds.marginal_base_rate(&w.base_rate).unwrap_or(ay);
 
                 let cond_p: [[$ft; N]; M] = array::from_fn(|i| conds[i].projection(&ay));
                 let pyhx: [$ft; N] =
-                    array::from_fn(|j| (0..M).map(|i| self.base_rate[i] * cond_p[i][j]).sum());
+                    array::from_fn(|j| (0..M).map(|i| w.base_rate[i] * cond_p[i][j]).sum());
                 let uyhx = (0..N)
                     .map(|j| {
                         (pyhx[j]
@@ -1028,13 +1029,10 @@ macro_rules! impl_deduction {
 
                 let u = uyhx
                     - (0..M)
-                        .map(|i| (uyhx - conds[i].uncertainty) * self.b()[i])
+                        .map(|i| (uyhx - conds[i].uncertainty) * w.b()[i])
                         .sum::<$ft>();
                 let b: [$ft; N] = array::from_fn(|j| {
-                    (0..M)
-                        .map(|i| self.projection(i) * cond_p[i][j])
-                        .sum::<$ft>()
-                        - ay[j] * u
+                    (0..M).map(|i| w.projection(i) * cond_p[i][j]).sum::<$ft>() - ay[j] * u
                 });
                 MOpinion1d::<$ft, N>::new_unchecked(b, u, ay)
             }
@@ -1379,6 +1377,21 @@ mod tests {
         ];
         let w = BOpinion::<f32>::new(0.7, 0.0, 0.3, 0.33);
         println!("{}", w.deduce(&cond, 0.5));
+    }
+
+    #[test]
+    fn test_deduction_mop() {
+        let a = [0.5, 0.5];
+        let s = MSimplex::<f32, 2>::new([0.0, 0.9], 0.1);
+        let w = MOpinion1d::<f32, 2>::from_simplex_unchecked(s.clone(), a.clone());
+        let ay = [0.75, 0.25];
+        let conds = [
+            MSimplex::<f32, 2>::new([0.5, 0.25], 0.25),
+            MSimplex::<f32, 2>::new([0.5, 0.25], 0.25),
+        ];
+        let w2 = w.deduce(&conds, ay.clone());
+        let w3 = (&s, &a).deduce(&conds, ay);
+        assert_eq!(w2, w3);
     }
 
     #[test]
