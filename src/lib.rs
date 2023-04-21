@@ -644,7 +644,7 @@ pub enum FusionOp<U> {
 
 pub trait FusionAssign<Rhs, U> {
     type Output;
-    fn fusion_assign(&mut self, rhs: Rhs, op: FusionOp<U>) -> Self::Output;
+    fn fusion_assign(&mut self, rhs: Rhs, op: &FusionOp<U>) -> Self::Output;
 }
 
 pub trait Fusion<Rhs, U> {
@@ -938,8 +938,12 @@ macro_rules! impl_fusion {
         impl<const N: usize> FusionAssign<&MSimplex<$ft, N>, $ft> for MOpinion1d<$ft, N> {
             type Output = Result<(), InvalidValueError>;
 
-            fn fusion_assign(&mut self, rhs: &MSimplex<$ft, N>, op: FusionOp<$ft>) -> Self::Output {
-                self.simplex = match op {
+            fn fusion_assign(
+                &mut self,
+                rhs: &MSimplex<$ft, N>,
+                op: &FusionOp<$ft>,
+            ) -> Self::Output {
+                self.simplex = match *op {
                     FusionOp::CumulativeA(gamma_a) => self.cfuse_al(rhs, gamma_a),
                     FusionOp::CumulativeE(gamma_a) => self.cfuse_ep(rhs, gamma_a),
                     FusionOp::Averaging(gamma_a) => self.afuse(rhs, gamma_a),
@@ -955,9 +959,9 @@ macro_rules! impl_fusion {
             fn fusion_assign(
                 &mut self,
                 rhs: &MOpinion1d<$ft, N>,
-                op: FusionOp<$ft>,
+                op: &FusionOp<$ft>,
             ) -> Self::Output {
-                *self = match op {
+                *self = match *op {
                     FusionOp::CumulativeA(gamma_a) => self.cfuse_al(rhs, gamma_a),
                     FusionOp::CumulativeE(gamma_a) => self.cfuse_ep(rhs, gamma_a),
                     FusionOp::Averaging(gamma_a) => self.afuse(rhs, gamma_a),
@@ -1478,16 +1482,16 @@ mod tests {
         let mut w = MOpinion1d::<f32, 2>::new([0.5, 0.25], 0.25, [0.5, 0.5]);
         let u = MOpinion1d::<f32, 2>::new([0.125, 0.75], 0.125, [0.75, 0.25]);
         let w2 = w.cfuse_al(&u, 0.5).unwrap();
-        w.fusion_assign(&u, FusionOp::CumulativeA(0.5)).unwrap();
+        w.fusion_assign(&u, &FusionOp::CumulativeA(0.5)).unwrap();
         assert!(w == w2);
         let w2 = w.cfuse_ep(&u, 0.5).unwrap();
-        w.fusion_assign(&u, FusionOp::CumulativeE(0.5)).unwrap();
+        w.fusion_assign(&u, &FusionOp::CumulativeE(0.5)).unwrap();
         assert!(w == w2);
         let w2 = w.afuse(&u, 0.5).unwrap();
-        w.fusion_assign(&u, FusionOp::Averaging(0.5)).unwrap();
+        w.fusion_assign(&u, &FusionOp::Averaging(0.5)).unwrap();
         assert!(w == w2);
         let w2 = w.wfuse(&u, 0.5).unwrap();
-        w.fusion_assign(&u, FusionOp::Weighted(0.5)).unwrap();
+        w.fusion_assign(&u, &FusionOp::Weighted(0.5)).unwrap();
         assert!(w == w2);
     }
 }
