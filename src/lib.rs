@@ -454,16 +454,28 @@ impl<T, U> From<(T, U)> for MSimplexBase<T, U> {
 
 /// The generlized structure of a multinomial opinion.
 #[derive(Debug, Clone, PartialEq)]
-pub struct MOpinion<T, U> {
-    pub simplex: MSimplexBase<T, U>,
+pub struct MOpinionBase<S, T> {
+    pub simplex: S,
     pub base_rate: T,
 }
 
-impl<T: Display, U: Display> Display for MOpinion<T, U> {
+impl<S, T> MOpinionBase<S, T> {
+    pub fn from_simplex_unchecked(s: S, a: T) -> Self {
+        Self {
+            simplex: s,
+            base_rate: a,
+        }
+    }
+}
+
+impl<S: Display, T: Display> Display for MOpinionBase<S, T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{},{}", self.simplex, self.base_rate)
     }
 }
+
+pub type MOpinion<T, U> = MOpinionBase<MSimplexBase<T, U>, T>;
+type MOpinionRef<'a, T, U> = MOpinionBase<&'a MSimplexBase<T, U>, &'a T>;
 
 impl<T, U> MOpinion<T, U> {
     fn new_unchecked(b: T, u: U, a: T) -> Self {
@@ -484,33 +496,37 @@ impl<T, U> MOpinion<T, U> {
     }
 }
 
+impl<T, U> MOpinionRef<'_, T, U> {
+    #[inline]
+    pub fn b(&self) -> &T {
+        &self.simplex.belief
+    }
+
+    #[inline]
+    pub fn u(&self) -> &U {
+        &self.simplex.uncertainty
+    }
+}
+
 impl<'a, T, U> From<&'a MOpinion<T, U>> for &'a MSimplexBase<T, U> {
     fn from(value: &'a MOpinion<T, U>) -> Self {
         &value.simplex
     }
 }
 
-impl<'a, 'b: 'a, T, U> From<(&'a MSimplexBase<T, U>, &'b T)> for MOpinion<&'a T, &'a U> {
+impl<'a, 'b: 'a, T, U> From<(&'a MSimplexBase<T, U>, &'b T)> for MOpinionRef<'a, T, U> {
     fn from(value: (&'a MSimplexBase<T, U>, &'b T)) -> Self {
-        let simplex = value.0;
-        let base_rate = value.1;
-        MOpinion {
-            simplex: MSimplexBase {
-                belief: &simplex.belief,
-                uncertainty: &simplex.uncertainty,
-            },
-            base_rate,
+        MOpinionBase {
+            simplex: &value.0,
+            base_rate: &value.1,
         }
     }
 }
 
-impl<'a, T, U> From<&'a MOpinion<T, U>> for MOpinion<&'a T, &'a U> {
+impl<'a, T, U> From<&'a MOpinion<T, U>> for MOpinionRef<'a, T, U> {
     fn from(value: &'a MOpinion<T, U>) -> Self {
-        MOpinion {
-            simplex: MSimplexBase {
-                belief: &value.simplex.belief,
-                uncertainty: &value.simplex.uncertainty,
-            },
+        MOpinionBase {
+            simplex: &value.simplex,
             base_rate: &value.base_rate,
         }
     }
@@ -523,7 +539,7 @@ pub type MSimplex<T, const N: usize> = MSimplexBase<[T; N], T>;
 pub type MOpinion1d<T, const N: usize> = MOpinion<[T; N], T>;
 
 /// The reference type of a multinomial opinion with 1-dimensional vectors.
-type MOpinion1dRef<'a, T, const N: usize> = MOpinion<&'a [T; N], &'a T>;
+type MOpinion1dRef<'a, T, const N: usize> = MOpinionRef<'a, [T; N], T>;
 
 macro_rules! impl_msimplex {
     ($ft: ty) => {
@@ -772,7 +788,7 @@ macro_rules! impl_mop {
         }
 
         /// The probability projection of `self`.
-        impl<'a, T: Index<usize, Output = $ft>> MOpinion<&'a T, &'a $ft> {
+        impl<'a, T: Index<usize, Output = $ft>> MOpinionRef<'a, T, $ft> {
             pub fn projection(&self, idx: usize) -> $ft {
                 self.b()[idx] + self.base_rate[idx] * *self.u()
             }
@@ -853,13 +869,13 @@ macro_rules! impl_fusion {
 
         impl<'a, A, const N: usize> Fusion<A, $ft> for MOpinion1d<$ft, N>
         where
-            A: Into<&'a MOpinion1d<$ft, N>>,
+            A: Into<MOpinion1dRef<'a, $ft, N>>,
         {
             type Output = Result<Self, InvalidValueError>;
 
             fn cfuse_al(&self, rhs: A, gamma_a: $ft) -> Self::Output {
                 let rhs = rhs.into();
-                let sr = &rhs.clone().simplex;
+                let sr = rhs.clone().simplex;
                 let s = self.cfuse_al(sr, gamma_a)?;
                 let a = if ulps_eq!(*self.u(), 0.0) && ulps_eq!(*rhs.u(), 0.0) {
                     array::from_fn(|i| {
@@ -885,7 +901,7 @@ macro_rules! impl_fusion {
 
             fn afuse(&self, rhs: A, gamma_a: $ft) -> Self::Output {
                 let rhs = rhs.into();
-                let sr = &rhs.clone().simplex;
+                let sr = rhs.clone().simplex;
                 let s = self.afuse(sr, gamma_a)?;
                 let a = if ulps_eq!(*self.u(), 0.0) && ulps_eq!(*rhs.u(), 0.0) {
                     array::from_fn(|i| {
@@ -899,7 +915,7 @@ macro_rules! impl_fusion {
 
             fn wfuse(&self, rhs: A, gamma_a: $ft) -> Self::Output {
                 let rhs = rhs.into();
-                let sr = &rhs.clone().simplex;
+                let sr = rhs.clone().simplex;
                 let s = self.wfuse(sr, gamma_a)?;
                 let a = if ulps_eq!(*self.u(), 0.0) && ulps_eq!(*rhs.u(), 0.0) {
                     array::from_fn(|i| {
@@ -1312,18 +1328,40 @@ mod tests {
     }
 
     #[test]
-    fn test_fusion() {
+    fn test_fusion_bop() {
         let w1 = BOpinion::<f32>::new(0.5, 0.0, 0.5, 0.5);
-        // let w2 = BOpinion::<f32>::new(0.3, 0.0, 0.7, 0.5);
         let w2 = BOpinion::<f32>::new(0.0, 0.90, 0.10, 0.5);
-
-        println!("{}", w1.cfuse(&w2).unwrap());
-        println!("{}", w1.afuse(&w2, 0.5).unwrap());
-        println!("{}", w1.wfuse(&w2, 0.5).unwrap());
+        assert!(w1.cfuse(&w2).is_ok());
+        assert!(w1.afuse(&w2, 0.5).is_ok());
+        assert!(w1.wfuse(&w2, 0.5).is_ok());
     }
 
     #[test]
-    fn test_bsl_deduction() {
+    fn test_fusion_mop() {
+        let w1 = MOpinion1d::<f32, 2>::new([0.5, 0.0], 0.5, [0.25, 0.75]);
+        let a = [0.5, 0.5];
+        let s = MSimplex::<f32, 2>::new([0.0, 0.9], 0.1);
+        let w2 = MOpinion1d::<f32, 2>::from_simplex_unchecked(s.clone(), a.clone());
+        assert_eq!(
+            w1.cfuse_al(&w2, 0.5).unwrap(),
+            w1.cfuse_al((&s, &a), 0.5).unwrap()
+        );
+        assert_eq!(
+            w1.cfuse_ep(&w2, 0.5).unwrap(),
+            w1.cfuse_ep((&s, &a), 0.5).unwrap()
+        );
+        assert_eq!(
+            w1.afuse(&w2, 0.5).unwrap(),
+            w1.afuse((&s, &a), 0.5).unwrap()
+        );
+        assert_eq!(
+            w1.wfuse(&w2, 0.5).unwrap(),
+            w1.wfuse((&s, &a), 0.5).unwrap()
+        );
+    }
+
+    #[test]
+    fn test_deduction_bop() {
         let cond = [
             BOpinion::<f32>::new(0.90, 0.02, 0.08, 0.5),
             BOpinion::<f32>::new(0.40, 0.52, 0.08, 0.5),
