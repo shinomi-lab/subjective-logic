@@ -642,7 +642,7 @@ pub enum FusionOp<U> {
     Weighted(U),
 }
 
-trait FusionAssign<Rhs, U> {
+pub trait FusionAssign<Rhs, U> {
     type Output;
     fn fusion_assign(&mut self, rhs: Rhs, op: FusionOp<U>) -> Self::Output;
 }
