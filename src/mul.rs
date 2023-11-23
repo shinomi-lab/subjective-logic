@@ -157,7 +157,7 @@ macro_rules! impl_projection {
         impl<T> SimplexBase<T, $ft> {
             pub fn projection<'a, Idx: Copy>(&'a self, a: &'a T) -> T
             where
-                T: IndexContainer<Idx, Output = $ft>,
+                T: IndexedContainer<Idx, Output = $ft>,
             {
                 T::from_fn(|i| self.belief[i] + self.uncertainty * a[i])
             }
@@ -330,7 +330,7 @@ macro_rules! impl_opinion {
 impl_opinion!(f32);
 impl_opinion!(f64);
 
-pub trait IndexContainer<K>: Index<K> {
+pub trait IndexedContainer<K>: Index<K> {
     const SIZE: usize;
     type Map<U>: Index<K, Output = U>;
     type Keys: Iterator<Item = K>;
@@ -339,7 +339,7 @@ pub trait IndexContainer<K>: Index<K> {
     fn from_fn<F: Fn(K) -> <Self as Index<K>>::Output>(f: F) -> Self;
 }
 
-impl<T, const N: usize> IndexContainer<usize> for [T; N] {
+impl<T, const N: usize> IndexedContainer<usize> for [T; N] {
     const SIZE: usize = N;
     type Map<U> = [U; N];
     type Keys = Range<usize>;
@@ -369,10 +369,10 @@ macro_rules! impl_mbr {
     ($ft: ty) => {
         impl<'a, X, Y, T, U, SimSet> MBR<'a, X, Y, T, U, $ft> for SimSet
         where
-            SimSet: IndexContainer<X>,
+            SimSet: IndexedContainer<X>,
             &'a SimSet::Output: Into<&'a SimplexBase<U, $ft>> + 'a,
             T: Index<X, Output = $ft>,
-            U: IndexContainer<Y, Output = $ft> + 'a,
+            U: IndexedContainer<Y, Output = $ft> + 'a,
             X: Copy,
             Y: Copy,
         {

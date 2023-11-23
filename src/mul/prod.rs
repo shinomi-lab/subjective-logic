@@ -1,4 +1,4 @@
-use super::IndexContainer;
+use super::IndexedContainer;
 use std::{
     array::from_fn,
     ops::{Index, IndexMut},
@@ -115,7 +115,7 @@ impl<V, const K0: usize, const K1: usize> IndexMut<[usize; 2]> for HA2<V, K1, K0
     }
 }
 
-impl<V, const K0: usize, const K1: usize> IndexContainer<[usize; 2]> for HA2<V, K1, K0> {
+impl<V, const K0: usize, const K1: usize> IndexedContainer<[usize; 2]> for HA2<V, K1, K0> {
     const SIZE: usize = K0 * K1;
     type Keys = HigherRange<2>;
     type Map<W> = HA2<W, K1, K0>;
@@ -165,7 +165,7 @@ impl<V, const K0: usize, const K1: usize, const K2: usize> IndexMut<[usize; 3]>
     }
 }
 
-impl<V, const K0: usize, const K1: usize, const K2: usize> IndexContainer<[usize; 3]>
+impl<V, const K0: usize, const K1: usize, const K2: usize> IndexedContainer<[usize; 3]>
     for HA3<V, K2, K1, K0>
 {
     const SIZE: usize = K0 * K1 * K2;

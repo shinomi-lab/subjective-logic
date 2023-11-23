@@ -2,7 +2,7 @@ use approx::ulps_eq;
 use std::{array, ops::Index};
 
 use super::{
-    IndexContainer, Opinion, Opinion1d, Opinion1dRef, OpinionRef, Simplex, SimplexBase, MBR,
+    IndexedContainer, Opinion, Opinion1d, Opinion1dRef, OpinionRef, Simplex, SimplexBase, MBR,
 };
 use crate::errors::InvalidValueError;
 
@@ -223,10 +223,10 @@ macro_rules! impl_deduction {
     ($ft: ty) => {
         impl<'a, 'b: 'a, Cond, X, Y, T, U> Deduction<X, Y, &'a Cond, U> for &'b Opinion<T, $ft>
         where
-            Cond: IndexContainer<X>,
+            Cond: IndexedContainer<X>,
             &'a Cond::Output: Into<&'a SimplexBase<U, $ft>> + 'a,
-            T: IndexContainer<X, Output = $ft>,
-            U: IndexContainer<Y, Output = $ft> + 'a,
+            T: IndexedContainer<X, Output = $ft>,
+            U: IndexedContainer<Y, Output = $ft> + 'a,
             X: Copy,
             Y: Copy,
         {
@@ -239,10 +239,10 @@ macro_rules! impl_deduction {
 
         impl<'a, 'b: 'a, Cond, X, Y, T, U> Deduction<X, Y, &'a Cond, U> for OpinionRef<'b, T, $ft>
         where
-            Cond: IndexContainer<X>,
+            Cond: IndexedContainer<X>,
             &'a Cond::Output: Into<&'a SimplexBase<U, $ft>> + 'a,
-            T: IndexContainer<X, Output = $ft>,
-            U: IndexContainer<Y, Output = $ft> + 'a,
+            T: IndexedContainer<X, Output = $ft>,
+            U: IndexedContainer<Y, Output = $ft> + 'a,
             X: Copy,
             Y: Copy,
         {
@@ -303,9 +303,9 @@ macro_rules! impl_inverse_condition {
     ($ft: ty) => {
         impl<Cond, T, U, X, Y> InverseCondition<X, Y, T, U, $ft> for Cond
         where
-            T: IndexContainer<X, Output = $ft>,
-            U: IndexContainer<Y, Output = $ft>,
-            Cond: IndexContainer<X, Output = SimplexBase<U, $ft>>,
+            T: IndexedContainer<X, Output = $ft>,
+            U: IndexedContainer<Y, Output = $ft>,
+            Cond: IndexedContainer<X, Output = SimplexBase<U, $ft>>,
             X: Copy,
             Y: Copy,
         {
@@ -379,11 +379,11 @@ macro_rules! impl_abduction {
     ($ft: ty) => {
         impl<'a, Cond, X, Y, T, U> Abduction<&'a Cond, X, Y, T, U> for &'a SimplexBase<U, $ft>
         where
-            Cond:
-                InverseCondition<X, Y, T, U, $ft> + IndexContainer<X, Output = SimplexBase<U, $ft>>,
-            Cond::InvCond: IndexContainer<Y, Output = SimplexBase<T, $ft>> + 'a,
-            T: IndexContainer<X, Output = $ft> + 'a,
-            U: IndexContainer<Y, Output = $ft>,
+            Cond: InverseCondition<X, Y, T, U, $ft>
+                + IndexedContainer<X, Output = SimplexBase<U, $ft>>,
+            Cond::InvCond: IndexedContainer<Y, Output = SimplexBase<T, $ft>> + 'a,
+            T: IndexedContainer<X, Output = $ft> + 'a,
+            U: IndexedContainer<Y, Output = $ft>,
             X: Copy,
             Y: Copy,
         {
