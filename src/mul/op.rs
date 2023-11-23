@@ -1,28 +1,10 @@
 use approx::ulps_eq;
-use std::array;
+use std::{array, ops::Index};
 
-use super::{Opinion1d, Opinion1dRef, Simplex, MBR};
+use super::{
+    IndexContainer, Opinion, Opinion1d, Opinion1dRef, OpinionRef, Simplex, SimplexBase, MBR,
+};
 use crate::errors::InvalidValueError;
-
-fn zip_arrays_into<T, U, V, const N: usize>(ts: [T; N], us: [U; N]) -> [V; N]
-where
-    V: From<(T, U)>,
-{
-    let mut ts = Vec::from(ts);
-    let mut us = Vec::from(us);
-    array::from_fn(|i| {
-        let t = ts.swap_remove(N - 1 - i);
-        let u = us.swap_remove(N - 1 - i);
-        (t, u).into()
-    })
-}
-
-fn each_into<'a, T, U, const N: usize>(arr: &'a [T; N]) -> [&U; N]
-where
-    &'a T: Into<&'a U>,
-{
-    array::from_fn(|i| (&arr[i]).into())
-}
 
 pub enum FusionOp<U> {
     CumulativeA(U),
@@ -50,25 +32,6 @@ pub trait Fusion<Rhs, U> {
 
     /// Computes the weighted belief fusion of `self` and `rhs`.
     fn wfuse(&self, rhs: Rhs, gamma_a: U) -> Self::Output;
-}
-
-/// The deduction operator.
-pub trait Deduction<Rhs, U> {
-    type Output;
-
-    /// Computes the conditionally deduced opinion of `self` with a base rate vector `ay`
-    /// by `conds` representing a collection of conditional opinions.
-    fn deduce(self, conds: Rhs, ay: U) -> Self::Output;
-}
-
-/// The abduction operator.
-pub trait Abduction<Rhs, U, V>: Sized {
-    type Output;
-
-    /// Computes the conditionally abduced opinion of `self` with a base rate vector `ax`
-    /// by `conds` representing a collection of conditional opinions.
-    /// If a marginal base rate cannot be computed from `conds`, ay is used instead.
-    fn abduce(self, conds: Rhs, ax: U, ay: Option<V>) -> Option<(Self::Output, V)>;
 }
 
 macro_rules! impl_fusion {
@@ -244,65 +207,80 @@ macro_rules! impl_fusion {
 impl_fusion!(f32);
 impl_fusion!(f64);
 
+/// The deduction operator.
+pub trait Deduction<X, Y, Cond, U>
+where
+    U: Index<Y>,
+{
+    type Output;
+
+    /// Computes the conditionally deduced opinion of `self` with a base rate vector `ay`
+    /// by `conds` representing a collection of conditional opinions.
+    fn deduce(self, conds: Cond, ay: U) -> Self::Output;
+}
+
 macro_rules! impl_deduction {
     ($ft: ty) => {
-        impl<const M: usize, const N: usize> Deduction<[Simplex<$ft, N>; M], [$ft; N]>
-            for &Opinion1d<$ft, M>
+        impl<'a, 'b: 'a, Cond, X, Y, T, U> Deduction<X, Y, &'a Cond, U> for &'b Opinion<T, $ft>
+        where
+            Cond: IndexContainer<X>,
+            &'a Cond::Output: Into<&'a SimplexBase<U, $ft>> + 'a,
+            T: IndexContainer<X, Output = $ft>,
+            U: IndexContainer<Y, Output = $ft> + 'a,
+            X: Copy,
+            Y: Copy,
         {
-            type Output = Opinion1d<$ft, N>;
-            fn deduce(self, conds: [Simplex<$ft, N>; M], ay: [$ft; N]) -> Self::Output {
-                self.deduce(&conds, ay)
+            type Output = Opinion<U, $ft>;
+
+            fn deduce(self, conds: &'a Cond, ay: U) -> Self::Output {
+                self.as_ref().deduce(conds, ay)
             }
         }
 
-        // impl<'a, A, const M: usize, const N: usize> Deduction<&'a [A; M], [$ft; N]>
-        //     for MOpinion1dRef<'a, $ft, M>
-        // where
-        //     &'a A: Into<&'a MSimplex<$ft, N>>,
-        // {
-        //     type Output = MOpinion1d<$ft, N>;
-
-        //     fn deduce(self, conds: &'a [A; M], ay: [$ft; N]) -> Self::Output {
-        //         MOpinion1dRef::from(self).deduce(conds, ay)
-        //     }
-        // }
-
-        impl<'a, A, B, const M: usize, const N: usize> Deduction<&'a [A; M], [$ft; N]> for B
+        impl<'a, 'b: 'a, Cond, X, Y, T, U> Deduction<X, Y, &'a Cond, U> for OpinionRef<'b, T, $ft>
         where
-            &'a A: Into<&'a Simplex<$ft, N>>,
-            B: Into<Opinion1dRef<'a, $ft, M>>,
+            Cond: IndexContainer<X>,
+            &'a Cond::Output: Into<&'a SimplexBase<U, $ft>> + 'a,
+            T: IndexContainer<X, Output = $ft>,
+            U: IndexContainer<Y, Output = $ft> + 'a,
+            X: Copy,
+            Y: Copy,
         {
-            type Output = Opinion1d<$ft, N>;
+            type Output = Opinion<U, $ft>;
 
-            fn deduce(self, conds: &'a [A; M], ay: [$ft; N]) -> Self::Output {
-                let w = self.into();
-                assert!(M > 0 && N > 1, "N > 0 and M > 1 must hold.");
-                let conds: [&Simplex<$ft, N>; M] = each_into(conds);
-                let ay = conds.marginal_base_rate(&w.base_rate).unwrap_or(ay);
+            fn deduce(self, conds: &'a Cond, ay: U) -> Self::Output {
+                // where
+                assert!(
+                    T::SIZE > 0 && U::SIZE > 1,
+                    "conds.len() > 0 and ay.len() > 1 must hold."
+                );
+                let ay: U = conds.marginal_base_rate(self.base_rate).unwrap_or(ay);
 
-                let cond_p: [[$ft; N]; M] = array::from_fn(|i| conds[i].projection(&ay));
-                let pyhx: [$ft; N] =
-                    array::from_fn(|j| (0..M).map(|i| w.base_rate[i] * cond_p[i][j]).sum());
-                let uyhx = (0..N)
-                    .map(|j| {
-                        (pyhx[j]
-                            - (0..M)
-                                .map(|i| conds[i].belief[j])
+                let cond_p: Cond::Map<U> = Cond::map(|x| (&conds[x]).into().projection(&ay));
+                let pyhx: U =
+                    U::from_fn(|y| Cond::keys().map(|x| self.base_rate[x] * cond_p[x][y]).sum());
+                let uyhx = U::keys()
+                    .map(|y| {
+                        (pyhx[y]
+                            - Cond::keys()
+                                .map(|x| (&conds[x]).into().belief[y])
                                 .reduce(<$ft>::min)
                                 .unwrap())
-                            / ay[j]
+                            / ay[y]
                     })
                     .reduce(<$ft>::min)
                     .unwrap();
-
                 let u = uyhx
-                    - (0..M)
-                        .map(|i| (uyhx - conds[i].uncertainty) * w.b()[i])
+                    - Cond::keys()
+                        .map(|x| (uyhx - (&conds[x]).into().uncertainty) * self.b()[x])
                         .sum::<$ft>();
-                let b: [$ft; N] = array::from_fn(|j| {
-                    (0..M).map(|i| w.projection(i) * cond_p[i][j]).sum::<$ft>() - ay[j] * u
+                let b = U::from_fn(|y| {
+                    T::keys()
+                        .map(|x| self.projection(x) * cond_p[x][y])
+                        .sum::<$ft>()
+                        - ay[y] * u
                 });
-                Opinion1d::<$ft, N>::new_unchecked(b, u, ay)
+                Opinion::<U, $ft>::new_unchecked(b, u, ay)
             }
         }
     };
@@ -311,73 +289,113 @@ macro_rules! impl_deduction {
 impl_deduction!(f32);
 impl_deduction!(f64);
 
+trait InverseCondition<X, Y, T, U, V>
+where
+    Self: Index<X, Output = SimplexBase<U, V>>,
+    T: Index<X, Output = V>,
+    U: Index<Y, Output = V>,
+{
+    type InvCond;
+    fn inverse(&self, ax: &T, ay: &U) -> Self::InvCond;
+}
+
+macro_rules! impl_inverse_condition {
+    ($ft: ty) => {
+        impl<Cond, T, U, X, Y> InverseCondition<X, Y, T, U, $ft> for Cond
+        where
+            T: IndexContainer<X, Output = $ft>,
+            U: IndexContainer<Y, Output = $ft>,
+            Cond: IndexContainer<X, Output = SimplexBase<U, $ft>>,
+            X: Copy,
+            Y: Copy,
+        {
+            type InvCond = U::Map<SimplexBase<T, $ft>>;
+            fn inverse(&self, ax: &T, ay: &U) -> Self::InvCond {
+                let p_yx: Cond::Map<U> = Cond::map(|x| self[x].projection(ay));
+                let p_xy: U::Map<T::Map<$ft>> = U::map(|y| {
+                    T::map(|x| {
+                        ax[x] * p_yx[x][y] / T::keys().map(|xd| ax[xd] * p_yx[xd][y]).sum::<$ft>()
+                    })
+                });
+                let u_yx_sum = Cond::keys().map(|x| self[x].uncertainty).sum::<$ft>();
+                let irrelevance_yx = U::from_fn(|y| {
+                    1.0 - T::keys().map(|x| p_yx[x][y]).reduce(<$ft>::max).unwrap()
+                        + T::keys().map(|x| p_yx[x][y]).reduce(<$ft>::min).unwrap()
+                });
+                let weights_yx = if u_yx_sum == 0.0 {
+                    T::from_fn(|_| 0.0)
+                } else {
+                    T::from_fn(|x| self[x].uncertainty / u_yx_sum)
+                };
+                let u_yx_marginal = T::from_fn(|x| {
+                    U::keys()
+                        .map(|y| p_yx[x][y] / ay[y])
+                        .reduce(<$ft>::min)
+                        .unwrap()
+                });
+                let u_yx_weight = T::from_fn(|x| {
+                    let tmp = u_yx_marginal[x];
+                    if tmp == 0.0 {
+                        0.0
+                    } else {
+                        weights_yx[x] * self[x].uncertainty / tmp
+                    }
+                });
+                let u_yx_exp: $ft = T::keys().map(|x| u_yx_weight[x]).sum();
+                let u_xy_marginal: U = U::from_fn(|y| {
+                    T::keys()
+                        .map(|x| p_yx[x][y] / T::keys().map(|k| ax[k] * p_yx[k][y]).sum::<$ft>())
+                        .reduce(<$ft>::min)
+                        .unwrap()
+                });
+                U::map(|y| {
+                    let u = u_xy_marginal[y] * (u_yx_exp + (1.0 - u_yx_exp) * irrelevance_yx[y]);
+                    let b = T::from_fn(|x| p_xy[y][x] - u * ax[x]);
+                    SimplexBase::new_unchecked(b, u)
+                })
+            }
+        }
+    };
+}
+
+impl_inverse_condition!(f32);
+impl_inverse_condition!(f64);
+
+/// The abduction operator.
+pub trait Abduction<Cond, X, Y, T, U>
+where
+    T: Index<X>,
+    U: Index<Y>,
+{
+    type Output;
+
+    /// Computes the conditionally abduced opinion of `self` with a base rate vector `ax`
+    /// by `conds` representing a collection of conditional opinions.
+    /// If a marginal base rate cannot be computed from `conds`, ay is used instead.
+    fn abduce(self, conds: Cond, ax: T, ay: Option<U>) -> Option<(Self::Output, U)>;
+}
+
 macro_rules! impl_abduction {
     ($ft: ty) => {
-        impl<const N: usize, const M: usize> Abduction<&[Simplex<$ft, N>; M], [$ft; M], [$ft; N]>
-            for &Simplex<$ft, N>
+        impl<'a, Cond, X, Y, T, U> Abduction<&'a Cond, X, Y, T, U> for &'a SimplexBase<U, $ft>
+        where
+            Cond:
+                InverseCondition<X, Y, T, U, $ft> + IndexContainer<X, Output = SimplexBase<U, $ft>>,
+            Cond::InvCond: IndexContainer<Y, Output = SimplexBase<T, $ft>> + 'a,
+            T: IndexContainer<X, Output = $ft> + 'a,
+            U: IndexContainer<Y, Output = $ft>,
+            X: Copy,
+            Y: Copy,
         {
-            type Output = Opinion1d<$ft, M>;
+            type Output = Opinion<T, $ft>;
 
-            fn abduce(
-                self,
-                conds_yx: &[Simplex<$ft, N>; M],
-                ax: [$ft; M],
-                ay: Option<[$ft; N]>,
-            ) -> Option<(Self::Output, [$ft; N])> {
-                fn inverse<'a, const N: usize, const M: usize>(
-                    conds_yx: &[Simplex<$ft, N>; M],
-                    ax: &[$ft; M],
-                    ay: &[$ft; N],
-                ) -> [Simplex<$ft, M>; N] {
-                    let p_yx: [[$ft; N]; M] = array::from_fn(|i| conds_yx[i].projection(ay));
-                    let p_xy: [[$ft; M]; N] = array::from_fn(|j| {
-                        array::from_fn(|i| {
-                            ax[i] * p_yx[i][j] / (0..M).map(|k| ax[k] * p_yx[k][j]).sum::<$ft>()
-                        })
-                    });
-                    let u_yx_sum = conds_yx.iter().map(|cond| cond.uncertainty).sum::<$ft>();
-                    let irrelevance_yx: [$ft; N] = array::from_fn(|j| {
-                        1.0 - (0..M).map(|i| p_yx[i][j]).reduce(<$ft>::max).unwrap()
-                            + (0..M).map(|i| p_yx[i][j]).reduce(<$ft>::min).unwrap()
-                    });
-                    let weights_yx = if u_yx_sum == 0.0 {
-                        [0.0; M]
-                    } else {
-                        array::from_fn(|i| conds_yx[i].uncertainty / u_yx_sum)
-                    };
-                    let u_yx_marginal: [$ft; M] = array::from_fn(|i| {
-                        (0..N)
-                            .map(|j| p_yx[i][j] / ay[j])
-                            .reduce(<$ft>::min)
-                            .unwrap()
-                    });
-                    let u_yx_weight: [$ft; M] = array::from_fn(|i| {
-                        let tmp = u_yx_marginal[i];
-                        if tmp == 0.0 {
-                            0.0
-                        } else {
-                            weights_yx[i] * conds_yx[i].uncertainty / tmp
-                        }
-                    });
-                    let u_yx_exp: $ft = u_yx_weight.into_iter().sum();
-                    let u_xy_marginal: [$ft; N] = array::from_fn(|j| {
-                        (0..M)
-                            .map(|i| p_yx[i][j] / (0..M).map(|k| ax[k] * p_yx[k][j]).sum::<$ft>())
-                            .reduce(<$ft>::min)
-                            .unwrap()
-                    });
-                    let u_xy_inv: [$ft; N] = array::from_fn(|j| {
-                        u_xy_marginal[j] * (u_yx_exp + (1.0 - u_yx_exp) * irrelevance_yx[j])
-                    });
-                    let bs: [[$ft; M]; N] =
-                        array::from_fn(|j| array::from_fn(|i| p_xy[j][i] - u_xy_inv[j] * ax[i]));
-                    zip_arrays_into(bs, u_xy_inv)
-                }
-
-                let ay = conds_yx.marginal_base_rate(&ax).or(ay)?;
-                let inv_conds = inverse(conds_yx, &ax, &ay);
-                let w = Opinion1dRef::<$ft, N>::from((self, &ay));
-                Some((w.deduce(&inv_conds, ax), ay))
+            fn abduce(self, conds_yx: &'a Cond, ax: T, ay: Option<U>) -> Option<(Self::Output, U)> {
+                let ay: U = MBR::marginal_base_rate(conds_yx, &ax).or(ay)?;
+                let inv_conds = InverseCondition::inverse(conds_yx, &ax, &ay);
+                Some((
+                    OpinionRef::<U, $ft>::from((self, &ay)).deduce(&inv_conds, ax),
+                    ay,
+                ))
             }
         }
     };

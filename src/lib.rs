@@ -12,6 +12,7 @@ mod tests {
     use approx::{assert_relative_eq, assert_ulps_eq};
 
     use crate::bi::BOpinion;
+    use crate::mul::OpinionRef;
     use crate::mul::{
         op::{Abduction, Deduction, Fusion, FusionAssign, FusionOp},
         Opinion1d, Simplex,
@@ -202,7 +203,7 @@ mod tests {
             Simplex::<f32, 2>::new([0.5, 0.25], 0.25),
         ];
         let w2 = w.deduce(&conds, ay.clone());
-        let w3 = (&s, &a).deduce(&conds, ay);
+        let w3 = OpinionRef::from((&s, &a)).deduce(&conds, ay);
         assert_eq!(w2, w3);
     }
 
@@ -235,7 +236,7 @@ mod tests {
             Opinion1d::<f32, 2>::new([0.72, 0.18], 0.1, [0.5, 0.5]),
             Opinion1d::<f32, 2>::new([0.13, 0.57], 0.3, [0.5, 0.5]),
         ];
-        println!("{:?}", wx.deduce(&wyx, [0.5, 0.5]));
+        println!("{:?}", wx.as_ref().deduce(&wyx, [0.5, 0.5]));
     }
 
     #[test]
@@ -254,7 +255,7 @@ mod tests {
             Opinion1d::<f32, 2>::new([0.0, 0.7], 0.3, [0.5, 0.5]),
             Opinion1d::<f32, 2>::new([0.0, 0.0], 1.0, [0.5, 0.5]),
         ];
-        let wx = wa.deduce(&wxa, [0.5, 0.5]);
+        let wx = wa.as_ref().deduce(&wxa, [0.5, 0.5]);
         println!("{:?}|{}", wx, wx.projection(0));
 
         let wa = BOpinion::<f32>::new(0.7, 0.1, 0.2, 0.5);
@@ -272,7 +273,7 @@ mod tests {
             Opinion1d::<f32, 3>::new([0.7, 0.0, 0.0], 0.3, [0.5, 0.2, 0.3]),
             Opinion1d::<f32, 3>::new([0.0, 0.7, 0.0], 0.3, [0.5, 0.2, 0.3]),
         ];
-        let wy = w.deduce(&conds, [0.5, 0.25, 0.25]);
+        let wy = w.as_ref().deduce(&conds, [0.5, 0.25, 0.25]);
         println!("{:?}", wy);
     }
 
@@ -285,7 +286,7 @@ mod tests {
         ];
         let ax = [0.70, 0.20, 0.10];
         let wy = Simplex::<f32, 3>::new_unchecked([0.00, 0.43, 0.00], 0.57);
-        let (wx, ay) = wy.abduce(&conds, ax, None).unwrap();
+        let (wx, ay) = Abduction::abduce(&wy, &conds, ax, None).unwrap();
         println!("{:?}, {:?}", wx, ay);
     }
 
@@ -298,7 +299,7 @@ mod tests {
             Simplex::<f32, 2>::new_unchecked([0.01, 0.01], 0.98),
         ];
         let mw_o = Simplex::<f32, 2>::new_unchecked([0.0, 0.0], 1.0);
-        let (mw_x, _) = mw_o.abduce(&conds_ox, ax, None).unwrap();
+        let (mw_x, _) = Abduction::abduce(&mw_o, &conds_ox, ax, None).unwrap();
         println!("{:?}", mw_x);
     }
 

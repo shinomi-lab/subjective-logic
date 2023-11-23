@@ -1,7 +1,12 @@
 pub mod op;
+pub mod prod;
 
 use approx::{ulps_eq, ulps_ne};
-use std::{array, fmt::Display, ops::Index};
+use std::{
+    array,
+    fmt::Display,
+    ops::{Index, Range},
+};
 
 use crate::approx_ext::ApproxRange;
 use crate::errors::InvalidValueError;
@@ -57,6 +62,13 @@ impl<S, T> OpinionBase<S, T> {
             base_rate: a,
         }
     }
+
+    pub fn as_ref(&self) -> OpinionBase<&S, &T> {
+        OpinionBase {
+            simplex: &self.simplex,
+            base_rate: &self.base_rate,
+        }
+    }
 }
 
 impl<S: Display, T: Display> Display for OpinionBase<S, T> {
@@ -66,7 +78,7 @@ impl<S: Display, T: Display> Display for OpinionBase<S, T> {
 }
 
 pub type Opinion<T, U> = OpinionBase<SimplexBase<T, U>, T>;
-type OpinionRef<'a, T, U> = OpinionBase<&'a SimplexBase<T, U>, &'a T>;
+pub type OpinionRef<'a, T, U> = OpinionBase<&'a SimplexBase<T, U>, &'a T>;
 
 impl<T, U> Opinion<T, U> {
     fn new_unchecked(b: T, u: U, a: T) -> Self {
@@ -116,12 +128,45 @@ impl<'a, 'b: 'a, T, U> From<(&'a SimplexBase<T, U>, &'b T)> for OpinionRef<'a, T
 
 impl<'a, T, U> From<&'a Opinion<T, U>> for OpinionRef<'a, T, U> {
     fn from(value: &'a Opinion<T, U>) -> Self {
-        OpinionBase {
-            simplex: &value.simplex,
-            base_rate: &value.base_rate,
-        }
+        value.as_ref()
     }
 }
+
+macro_rules! impl_projection {
+    ($ft: ty) => {
+        /// The probability projection of `self`.
+        impl<T> Opinion<T, $ft> {
+            pub fn projection<Idx: Copy>(&self, idx: Idx) -> $ft
+            where
+                T: Index<Idx, Output = $ft>,
+            {
+                self.b()[idx] + self.base_rate[idx] * self.u()
+            }
+        }
+
+        /// The probability projection of `self`.
+        impl<'a, T> OpinionRef<'a, T, $ft> {
+            pub fn projection<Idx: Copy>(&self, idx: Idx) -> $ft
+            where
+                T: Index<Idx, Output = $ft>,
+            {
+                self.b()[idx] + self.base_rate[idx] * *self.u()
+            }
+        }
+
+        impl<T> SimplexBase<T, $ft> {
+            pub fn projection<'a, Idx: Copy>(&'a self, a: &'a T) -> T
+            where
+                T: IndexContainer<Idx, Output = $ft>,
+            {
+                T::from_fn(|i| self.belief[i] + self.uncertainty * a[i])
+            }
+        }
+    };
+}
+
+impl_projection!(f32);
+impl_projection!(f64);
 
 /// The reference of a simplex of a multinomial opinion, from which a base rate is excluded.
 pub type Simplex<T, const N: usize> = SimplexBase<[T; N], T>;
@@ -132,11 +177,7 @@ pub type Opinion1d<T, const N: usize> = Opinion<[T; N], T>;
 /// The reference type of a multinomial opinion with 1-dimensional vectors.
 type Opinion1dRef<'a, T, const N: usize> = OpinionRef<'a, [T; N], T>;
 
-trait MBR<T, const N: usize, const M: usize> {
-    fn marginal_base_rate(&self, ax: &[T; M]) -> Option<[T; N]>;
-}
-
-macro_rules! impl_msimplex {
+macro_rules! impl_simplex {
     ($ft: ty) => {
         impl<const N: usize> Simplex<$ft, N> {
             /// Creates a new simplex of a multinomial opinion (i.e. excluding a base rate) from parameters,
@@ -179,54 +220,14 @@ macro_rules! impl_msimplex {
             pub fn new(b: [$ft; N], u: $ft) -> Self {
                 Self::try_new(b, u).unwrap()
             }
-
-            pub fn projection(&self, a: &[$ft; N]) -> [$ft; N] {
-                array::from_fn(|i| self.belief[i] + self.uncertainty * a[i])
-            }
-        }
-
-        impl<const M: usize, const N: usize> MBR<$ft, N, M> for [&Simplex<$ft, N>; M] {
-            fn marginal_base_rate(&self, ax: &[$ft; M]) -> Option<[$ft; N]> {
-                if ulps_eq!((0..M).map(|i| self[i].uncertainty).sum::<$ft>(), M as $ft) {
-                    None
-                } else {
-                    Some(array::from_fn(|j| {
-                        let temp = (0..M).map(|i| ax[i] * self[i].uncertainty).sum::<$ft>();
-                        let temp2 = (0..M).map(|i| ax[i] * self[i].belief[j]).sum::<$ft>();
-                        if temp <= <$ft>::EPSILON {
-                            temp2
-                        } else {
-                            temp2 / (1.0 - temp)
-                        }
-                    }))
-                }
-            }
-        }
-
-        impl<const M: usize, const N: usize> MBR<$ft, N, M> for [Simplex<$ft, N>; M] {
-            fn marginal_base_rate(&self, ax: &[$ft; M]) -> Option<[$ft; N]> {
-                if ulps_eq!((0..M).map(|i| self[i].uncertainty).sum::<$ft>(), M as $ft) {
-                    None
-                } else {
-                    Some(array::from_fn(|j| {
-                        let temp = (0..M).map(|i| ax[i] * self[i].uncertainty).sum::<$ft>();
-                        let temp2 = (0..M).map(|i| ax[i] * self[i].belief[j]).sum::<$ft>();
-                        if temp <= <$ft>::EPSILON {
-                            temp2
-                        } else {
-                            temp2 / (1.0 - temp)
-                        }
-                    }))
-                }
-            }
         }
     };
 }
 
-impl_msimplex!(f32);
-impl_msimplex!(f64);
+impl_simplex!(f32);
+impl_simplex!(f64);
 
-macro_rules! impl_mop {
+macro_rules! impl_opinion {
     ($ft: ty) => {
         impl<const N: usize> Opinion1d<$ft, N> {
             /// Creates a new multinomial opinion from parameters, which must satisfy the following conditions:
@@ -323,22 +324,85 @@ macro_rules! impl_mop {
                     .unwrap()
             }
         }
+    };
+}
 
-        /// The probability projection of `self`.
-        impl<T: Index<usize, Output = $ft>> Opinion<T, $ft> {
-            pub fn projection(&self, idx: usize) -> $ft {
-                self.b()[idx] + self.base_rate[idx] * self.u()
-            }
-        }
+impl_opinion!(f32);
+impl_opinion!(f64);
 
-        /// The probability projection of `self`.
-        impl<'a, T: Index<usize, Output = $ft>> OpinionRef<'a, T, $ft> {
-            pub fn projection(&self, idx: usize) -> $ft {
-                self.b()[idx] + self.base_rate[idx] * *self.u()
+pub trait IndexContainer<K>: Index<K> {
+    const SIZE: usize;
+    type Map<U>: Index<K, Output = U>;
+    type Keys: Iterator<Item = K>;
+    fn keys() -> Self::Keys;
+    fn map<U, F: Fn(K) -> U>(f: F) -> Self::Map<U>;
+    fn from_fn<F: Fn(K) -> <Self as Index<K>>::Output>(f: F) -> Self;
+}
+
+impl<T, const N: usize> IndexContainer<usize> for [T; N] {
+    const SIZE: usize = N;
+    type Map<U> = [U; N];
+    type Keys = Range<usize>;
+
+    fn keys() -> Self::Keys {
+        0..N
+    }
+
+    fn map<U, F: Fn(usize) -> U>(f: F) -> [U; N] {
+        array::from_fn(|i| f(i))
+    }
+
+    fn from_fn<F: Fn(usize) -> T>(f: F) -> Self {
+        array::from_fn(|i| f(i))
+    }
+}
+
+trait MBR<'a, X, Y, T, U, V>
+where
+    T: Index<X, Output = V>,
+    U: Index<Y, Output = V>,
+{
+    fn marginal_base_rate(&'a self, ax: &'a T) -> Option<U>;
+}
+
+macro_rules! impl_mbr {
+    ($ft: ty) => {
+        impl<'a, X, Y, T, U, SimSet> MBR<'a, X, Y, T, U, $ft> for SimSet
+        where
+            SimSet: IndexContainer<X>,
+            &'a SimSet::Output: Into<&'a SimplexBase<U, $ft>> + 'a,
+            T: Index<X, Output = $ft>,
+            U: IndexContainer<Y, Output = $ft> + 'a,
+            X: Copy,
+            Y: Copy,
+        {
+            fn marginal_base_rate(&'a self, ax: &'a T) -> Option<U> {
+                if ulps_eq!(
+                    SimSet::keys()
+                        .map(|x| (&self[x]).into().uncertainty)
+                        .sum::<$ft>(),
+                    SimSet::SIZE as $ft
+                ) {
+                    return None;
+                }
+                let ay = U::from_fn(|y| {
+                    let temp = SimSet::keys()
+                        .map(|x| ax[x] * (&self[x]).into().uncertainty)
+                        .sum::<$ft>();
+                    let temp2 = SimSet::keys()
+                        .map(|x| ax[x] * (&self[x]).into().belief[y])
+                        .sum::<$ft>();
+                    if temp <= <$ft>::EPSILON {
+                        temp2
+                    } else {
+                        temp2 / (1.0 - temp)
+                    }
+                });
+                Some(ay)
             }
         }
     };
 }
 
-impl_mop!(f32);
-impl_mop!(f64);
+impl_mbr!(f32);
+impl_mbr!(f64);
