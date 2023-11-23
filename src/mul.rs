@@ -12,19 +12,19 @@ use crate::approx_ext::ApproxRange;
 use crate::errors::InvalidValueError;
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct SimplexBase<T, U> {
+pub struct SimplexBase<T, V> {
     pub belief: T,
-    pub uncertainty: U,
+    pub uncertainty: V,
 }
 
-impl<T: Display, U: Display> Display for SimplexBase<T, U> {
+impl<T: Display, V: Display> Display for SimplexBase<T, V> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{},{}", self.belief, self.uncertainty)
     }
 }
 
-impl<T, U> SimplexBase<T, U> {
-    pub fn new_unchecked(b: T, u: U) -> Self {
+impl<T, V> SimplexBase<T, V> {
+    pub fn new_unchecked(b: T, u: V) -> Self {
         Self {
             belief: b,
             uncertainty: u,
@@ -37,13 +37,13 @@ impl<T, U> SimplexBase<T, U> {
     }
 
     #[inline]
-    pub fn u(&self) -> &U {
+    pub fn u(&self) -> &V {
         &self.uncertainty
     }
 }
 
-impl<T, U> From<(T, U)> for SimplexBase<T, U> {
-    fn from(value: (T, U)) -> Self {
+impl<T, V> From<(T, V)> for SimplexBase<T, V> {
+    fn from(value: (T, V)) -> Self {
         SimplexBase::new_unchecked(value.0, value.1)
     }
 }
@@ -136,21 +136,21 @@ macro_rules! impl_projection {
     ($ft: ty) => {
         /// The probability projection of `self`.
         impl<T> Opinion<T, $ft> {
-            pub fn projection<Idx: Copy>(&self, idx: Idx) -> $ft
+            pub fn projection<Idx: Copy>(&self) -> T
             where
-                T: Index<Idx, Output = $ft>,
+                T: IndexedContainer<Idx, Output = $ft>,
             {
-                self.b()[idx] + self.base_rate[idx] * self.u()
+                self.as_ref().projection()
             }
         }
 
         /// The probability projection of `self`.
         impl<'a, T> OpinionRef<'a, T, $ft> {
-            pub fn projection<Idx: Copy>(&self, idx: Idx) -> $ft
+            pub fn projection<Idx: Copy>(&self) -> T
             where
-                T: Index<Idx, Output = $ft>,
+                T: IndexedContainer<Idx, Output = $ft>,
             {
-                self.b()[idx] + self.base_rate[idx] * *self.u()
+                T::from_fn(|idx| self.b()[idx] + self.base_rate[idx] * self.u())
             }
         }
 
@@ -301,16 +301,18 @@ macro_rules! impl_opinion {
 
             /// Returns the uncertainty maximized opinion of `self`.
             pub fn max_uncertainty(&self) -> $ft {
+                let p = self.projection();
                 (0..N)
-                    .map(|i| self.projection(i) / self.base_rate[i])
+                    .map(|i| p[i] / self.base_rate[i])
                     .reduce(<$ft>::min)
                     .unwrap()
             }
 
             /// Returns the uncertainty maximized opinion of `self`.
             pub fn op_u_max(&self) -> Result<Self, InvalidValueError> {
+                let p = self.projection();
                 let u_max = self.max_uncertainty();
-                let b_max = array::from_fn(|i| self.projection(i) - self.base_rate[i] * u_max);
+                let b_max = array::from_fn(|i| p[i] - self.base_rate[i] * u_max);
                 Self::try_new(b_max, u_max, self.base_rate.clone())
             }
         }
@@ -318,8 +320,9 @@ macro_rules! impl_opinion {
         impl<'a, const N: usize> Opinion1dRef<'a, $ft, N> {
             /// Returns the uncertainty maximized opinion of `self`.
             pub fn max_uncertainty(&self) -> $ft {
+                let p = self.projection();
                 (0..N)
-                    .map(|i| self.projection(i) / self.base_rate[i])
+                    .map(|i| p[i] / self.base_rate[i])
                     .reduce(<$ft>::min)
                     .unwrap()
             }

@@ -256,7 +256,7 @@ mod tests {
             Opinion1d::<f32, 2>::new([0.0, 0.0], 1.0, [0.5, 0.5]),
         ];
         let wx = wa.as_ref().deduce(&wxa, [0.5, 0.5]);
-        println!("{:?}|{}", wx, wx.projection(0));
+        println!("{:?}|{}", wx, wx.projection()[0]);
 
         let wa = BOpinion::<f32>::new(0.7, 0.1, 0.2, 0.5);
         let wxa = [

@@ -57,8 +57,9 @@ macro_rules! impl_fusion {
             fn cfuse_ep(&self, rhs: &Simplex<$ft, N>, gamma_a: $ft) -> Self::Output {
                 let s = self.cfuse_al(rhs, gamma_a)?;
                 let w = Opinion1dRef::<$ft, N>::from((&s, &self.base_rate));
+                let wp = w.projection();
                 let u_max = w.max_uncertainty();
-                let b_max = array::from_fn(|i| w.projection(i) - w.base_rate[i] * u_max);
+                let b_max = array::from_fn(|i| wp[i] - w.base_rate[i] * u_max);
                 Simplex::<$ft, N>::try_new(b_max, u_max)
             }
 
@@ -274,12 +275,9 @@ macro_rules! impl_deduction {
                     - Cond::keys()
                         .map(|x| (uyhx - (&conds[x]).into().uncertainty) * self.b()[x])
                         .sum::<$ft>();
-                let b = U::from_fn(|y| {
-                    T::keys()
-                        .map(|x| self.projection(x) * cond_p[x][y])
-                        .sum::<$ft>()
-                        - ay[y] * u
-                });
+                let p = self.projection();
+                let b =
+                    U::from_fn(|y| T::keys().map(|x| p[x] * cond_p[x][y]).sum::<$ft>() - ay[y] * u);
                 Opinion::<U, $ft>::new_unchecked(b, u, ay)
             }
         }
