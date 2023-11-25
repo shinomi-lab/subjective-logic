@@ -1,7 +1,9 @@
 use approx::ulps_eq;
 use std::{array, ops::Index};
 
-use super::{IndexedContainer, Opinion, Opinion1d, Opinion1dRef, OpinionRef, SimplexBase, MBR};
+use super::{
+    IndexedContainer, Opinion, Opinion1d, Opinion1dRef, OpinionRef, Simplex, SimplexBase, MBR,
+};
 use crate::errors::InvalidValueError;
 
 #[derive(Clone, Copy)]
@@ -49,8 +51,11 @@ macro_rules! impl_fusion {
                     let gamma_b = 1.0 - gamma_a;
                     let b = array::from_fn(|i| gamma_a * lhs.b()[i] + gamma_b * rhs.b()[i]);
                     let u = 0.0;
-                    let a =
-                        array::from_fn(|i| gamma_a * lhs.base_rate[i] + gamma_b * rhs.base_rate[i]);
+                    let a = if std::ptr::eq(lhs.base_rate, rhs.base_rate) {
+                        lhs.base_rate.clone()
+                    } else {
+                        array::from_fn(|i| gamma_a * lhs.base_rate[i] + gamma_b * rhs.base_rate[i])
+                    };
                     let w = Opinion1d::<$ft, N>::new_unchecked(b, u, a);
                     if matches!(self, FuseOp::ECm) {
                         return w.op_u_max();
@@ -66,7 +71,9 @@ macro_rules! impl_fusion {
                         let b =
                             array::from_fn(|i| (lhs.b()[i] * rhs_u + rhs.b()[i] * lhs_u) / temp);
                         let u = lhs_u * rhs_u / temp;
-                        let a = if ulps_eq!(lhs_u, 1.0) && ulps_eq!(rhs_u, 1.0) {
+                        let a = if std::ptr::eq(lhs.base_rate, rhs.base_rate) {
+                            lhs.base_rate.clone()
+                        } else if ulps_eq!(lhs_u, 1.0) && ulps_eq!(rhs_u, 1.0) {
                             array::from_fn(|i| (lhs.base_rate[i] + rhs.base_rate[i]) / 2.0)
                         } else {
                             let temp2 = temp - lhs_u * rhs_u;
@@ -94,7 +101,11 @@ macro_rules! impl_fusion {
                         let b =
                             array::from_fn(|i| (lhs.b()[i] * rhs_u + rhs.b()[i] * lhs_u) / temp);
                         let u = 2.0 * lhs_u * rhs_u / temp;
-                        let a = array::from_fn(|i| (lhs.base_rate[i] + rhs.base_rate[i]) / 2.0);
+                        let a = if std::ptr::eq(lhs.base_rate, rhs.base_rate) {
+                            lhs.base_rate.clone()
+                        } else {
+                            array::from_fn(|i| (lhs.base_rate[i] + rhs.base_rate[i]) / 2.0)
+                        };
                         Opinion1d::<$ft, N>::try_new(b, u, a)
                     }
                     FuseOp::Wgh => {
@@ -104,7 +115,11 @@ macro_rules! impl_fusion {
                         if ulps_eq!(lhs_u, 1.0) && ulps_eq!(rhs_u, 1.0) {
                             b = [0.0; N];
                             u = 1.0;
-                            a = array::from_fn(|i| (lhs.base_rate[i] + rhs.base_rate[i]) / 2.0);
+                            a = if std::ptr::eq(lhs.base_rate, rhs.base_rate) {
+                                lhs.base_rate.clone()
+                            } else {
+                                array::from_fn(|i| (lhs.base_rate[i] + rhs.base_rate[i]) / 2.0)
+                            };
                         } else {
                             let lhs_sum_b = 1.0 - lhs_u;
                             let rhs_sum_b = 1.0 - rhs_u;
@@ -115,14 +130,31 @@ macro_rules! impl_fusion {
                                     / temp
                             });
                             u = temp2 * lhs_u * rhs_u / temp;
-                            a = array::from_fn(|i| {
-                                (lhs.base_rate[i] * lhs_sum_b + rhs.base_rate[i] * rhs_sum_b)
-                                    / temp2
-                            });
+                            a = if std::ptr::eq(lhs.base_rate, rhs.base_rate) {
+                                lhs.base_rate.clone()
+                            } else {
+                                array::from_fn(|i| {
+                                    (lhs.base_rate[i] * lhs_sum_b + rhs.base_rate[i] * rhs_sum_b)
+                                        / temp2
+                                })
+                            };
                         }
                         Opinion1d::<$ft, N>::try_new(b, u, a)
                     }
                 }
+            }
+        }
+
+        impl<'a, const N: usize> FuseAssign<Opinion1d<$ft, N>, &'a Simplex<$ft, N>> for FuseOp {
+            type Err = InvalidValueError;
+            fn fuse_assign(
+                &self,
+                lhs: &mut Opinion1d<$ft, N>,
+                rhs: &'a Simplex<$ft, N>,
+            ) -> Result<(), Self::Err> {
+                let w = self.fuse(lhs.as_ref(), Opinion1dRef::from((rhs, &lhs.base_rate)))?;
+                *lhs = w;
+                Ok(())
             }
         }
 
@@ -365,7 +397,7 @@ impl_abduction!(f64);
 mod tests {
     use crate::mul::{
         op::{Deduction, Fuse, FuseAssign, FuseOp},
-        Opinion1d, Simplex,
+        Opinion1d, OpinionRef, Simplex,
     };
 
     fn nround<const N: i32>(v: f32) -> f32 {
@@ -464,10 +496,12 @@ mod tests {
     #[test]
     fn test_fusion_assign() {
         let mut w = Opinion1d::<f32, 2>::new([0.5, 0.25], 0.25, [0.5, 0.5]);
-        let u = Opinion1d::<f32, 2>::new([0.125, 0.75], 0.125, [0.75, 0.25]);
+        let u = Simplex::<f32, 2>::new([0.125, 0.75], 0.125);
         let ops = [FuseOp::ACm, FuseOp::ECm, FuseOp::Avg, FuseOp::Wgh];
         for op in ops {
-            let w2 = op.fuse(&w, &u).unwrap();
+            let w2 = op
+                .fuse(w.as_ref(), OpinionRef::from((&u, &w.base_rate)))
+                .unwrap();
             op.fuse_assign(&mut w, &u).unwrap();
             assert!(w == w2);
         }
