@@ -214,7 +214,7 @@ pub trait Deduction<X, Y, Cond, U>: Sized {
 
     /// Computes the conditionally deduced opinion of `self` with a the marginal base rate (MBR)
     /// by `conds` representing a collection of conditional opinions.
-    /// If all conditional opinions are vacuous, i.e. $$\forall x. u_{Y|x} = 1$$,
+    /// If all conditional opinions are vacuous, i.e. \\(\forall x. u_{Y|x} = 1\\),
     /// then MBR cannot be determined and a vacuous opinion is deduced.
     fn deduce(self, conds: Cond) -> Option<Self::Output>;
     fn deduce_with(self, conds: Cond, ay: U) -> Self::Output;
