@@ -1,204 +1,140 @@
 use approx::ulps_eq;
 use std::{array, ops::Index};
 
-use super::{
-    IndexedContainer, Opinion, Opinion1d, Opinion1dRef, OpinionRef, Simplex, SimplexBase, MBR,
-};
+use super::{IndexedContainer, Opinion, Opinion1d, Opinion1dRef, OpinionRef, SimplexBase, MBR};
 use crate::errors::InvalidValueError;
 
-pub enum FusionOp<U> {
-    CumulativeA(U),
-    CumulativeE(U),
-    Averaging(U),
-    Weighted(U),
+#[derive(Clone, Copy)]
+pub enum FuseOp {
+    /// Aleatory cumulative fusion operator
+    ACm,
+    /// Epistemic cumulative fusion operator
+    ECm,
+    /// Averaging belief fusion of operator
+    Avg,
+    /// Weighted belief fusion of operator
+    Wgh,
 }
 
-pub trait FusionAssign<Rhs, U> {
-    type Output;
-    fn fusion_assign(&mut self, rhs: Rhs, op: &FusionOp<U>) -> Self::Output;
+pub trait FuseAssign<T> {
+    type Err;
+    fn fuse_assign(&self, lhs: &mut T, rhs: &T) -> Result<(), Self::Err>;
 }
 
-pub trait Fusion<Rhs, U> {
+pub trait Fuse<T> {
     type Output;
-
-    /// Computes the aleatory cumulative fusion of `self` and `rhs`.
-    fn cfuse_al(&self, rhs: Rhs, gamma_a: U) -> Self::Output;
-
-    /// Computes the epistemic cumulative fusion of `self` and `rhs`.
-    fn cfuse_ep(&self, rhs: Rhs, gamma_a: U) -> Self::Output;
-
-    /// Computes the averaging belief fusion of `self` and `rhs`.
-    fn afuse(&self, rhs: Rhs, gamma_a: U) -> Self::Output;
-
-    /// Computes the weighted belief fusion of `self` and `rhs`.
-    fn wfuse(&self, rhs: Rhs, gamma_a: U) -> Self::Output;
+    fn fuse(&self, lhs: T, rhs: T) -> Self::Output;
 }
 
 macro_rules! impl_fusion {
     ($ft: ty) => {
-        impl<const N: usize> Fusion<&Simplex<$ft, N>, $ft> for Opinion1d<$ft, N> {
-            type Output = Result<Simplex<$ft, N>, InvalidValueError>;
-            fn cfuse_al(&self, rhs: &Simplex<$ft, N>, gamma_a: $ft) -> Self::Output {
-                let b;
-                let u;
-                if ulps_eq!(*self.u(), 0.0) && ulps_eq!(*rhs.u(), 0.0) {
-                    let gamma_b = 1.0 - gamma_a;
-                    b = array::from_fn(|i| gamma_a * self.b()[i] + gamma_b * rhs.b()[i]);
-                    u = 0.0;
-                } else {
-                    let rhs_u = *rhs.u();
-                    let temp = self.u() + rhs_u - self.u() * rhs_u;
-                    b = array::from_fn(|i| (self.b()[i] * rhs_u + rhs.b()[i] * self.u()) / temp);
-                    u = self.u() * rhs_u / temp;
-                }
-                Simplex::<$ft, N>::try_new(b, u)
-            }
+        impl<const N: usize> Fuse<&Opinion1d<$ft, N>> for FuseOp {
+            type Output = Result<Opinion1d<$ft, N>, InvalidValueError>;
 
-            fn cfuse_ep(&self, rhs: &Simplex<$ft, N>, gamma_a: $ft) -> Self::Output {
-                let s = self.cfuse_al(rhs, gamma_a)?;
-                let w = Opinion1dRef::<$ft, N>::from((&s, &self.base_rate));
-                let wp = w.projection();
-                let u_max = w.max_uncertainty();
-                let b_max = array::from_fn(|i| wp[i] - w.base_rate[i] * u_max);
-                Simplex::<$ft, N>::try_new(b_max, u_max)
-            }
-
-            fn afuse(&self, rhs: &Simplex<$ft, N>, gamma_a: $ft) -> Self::Output {
-                let b;
-                let u;
-                if ulps_eq!(*self.u(), 0.0) && ulps_eq!(*rhs.u(), 0.0) {
-                    let gamma_b = 1.0 - gamma_a;
-                    b = array::from_fn(|i| gamma_a * self.b()[i] + gamma_b * rhs.b()[i]);
-                    u = 0.0;
-                } else {
-                    let rhs_u = *rhs.u();
-                    let upu = self.u() + rhs_u;
-                    b = array::from_fn(|i| (self.b()[i] * rhs_u + rhs.b()[i] * self.u()) / upu);
-                    u = 2.0 * self.u() * rhs_u / upu;
-                }
-                Simplex::<$ft, N>::try_new(b, u)
-            }
-
-            fn wfuse(&self, rhs: &Simplex<$ft, N>, gamma_a: $ft) -> Self::Output {
-                let b;
-                let u;
-                if ulps_eq!(*self.u(), 0.0) && ulps_eq!(*rhs.u(), 0.0) {
-                    let gamma_b = 1.0 - gamma_a;
-                    b = array::from_fn(|i| gamma_a * self.b()[i] + gamma_b * rhs.b()[i]);
-                    u = 0.0;
-                } else if ulps_eq!(*self.u(), 1.0) && ulps_eq!(*rhs.u(), 1.0) {
-                    b = [0.0; N];
-                    u = 1.0;
-                } else {
-                    let rhs_u = *rhs.u();
-                    let denom = self.u() + rhs_u - 2.0 * self.u() * rhs_u;
-                    let ca = 1.0 - self.u();
-                    let cb = 1.0 - rhs_u;
-                    b = array::from_fn(|i| {
-                        (self.b()[i] * ca * rhs_u + rhs.b()[i] * cb * self.u()) / denom
-                    });
-                    u = (2.0 - self.u() - rhs_u) * self.u() * rhs_u / denom;
-                }
-                Simplex::<$ft, N>::try_new(b, u)
+            fn fuse(&self, lhs: &Opinion1d<$ft, N>, rhs: &Opinion1d<$ft, N>) -> Self::Output {
+                self.fuse(lhs.as_ref(), rhs.as_ref())
             }
         }
 
-        impl<'a, A, const N: usize> Fusion<A, $ft> for Opinion1d<$ft, N>
-        where
-            A: Into<Opinion1dRef<'a, $ft, N>>,
-        {
-            type Output = Result<Self, InvalidValueError>;
+        impl<'a, const N: usize> Fuse<Opinion1dRef<'a, $ft, N>> for FuseOp {
+            type Output = Result<Opinion1d<$ft, N>, InvalidValueError>;
 
-            fn cfuse_al(&self, rhs: A, gamma_a: $ft) -> Self::Output {
-                let rhs = rhs.into();
-                let sr = rhs.clone().simplex;
-                let s = self.cfuse_al(sr, gamma_a)?;
-                let a = if ulps_eq!(*self.u(), 0.0) && ulps_eq!(*rhs.u(), 0.0) {
-                    array::from_fn(|i| {
-                        gamma_a * self.base_rate[i] + (1.0 - gamma_a) * rhs.base_rate[i]
-                    })
-                } else if ulps_eq!(*self.u(), 1.0) && ulps_eq!(*rhs.u(), 1.0) {
-                    array::from_fn(|i| (self.base_rate[i] + rhs.base_rate[i]) / 2.0)
-                } else {
-                    let rhs_u = *rhs.u();
-                    array::from_fn(|i| {
-                        (self.base_rate[i] * rhs_u + rhs.base_rate[i] * self.u()
-                            - (self.base_rate[i] + rhs.base_rate[i]) * self.u() * rhs_u)
-                            / (self.u() + rhs_u - self.u() * rhs_u * 2.0)
-                    })
-                };
-                Self::try_from_simplex(s, a)
-            }
-
-            fn cfuse_ep(&self, rhs: A, gamma_a: $ft) -> Self::Output {
-                let w = self.cfuse_al(rhs, gamma_a)?;
-                w.op_u_max()
-            }
-
-            fn afuse(&self, rhs: A, gamma_a: $ft) -> Self::Output {
-                let rhs = rhs.into();
-                let sr = rhs.clone().simplex;
-                let s = self.afuse(sr, gamma_a)?;
-                let a = if ulps_eq!(*self.u(), 0.0) && ulps_eq!(*rhs.u(), 0.0) {
-                    array::from_fn(|i| {
-                        gamma_a * self.base_rate[i] + (1.0 - gamma_a) * rhs.base_rate[i]
-                    })
-                } else {
-                    array::from_fn(|i| (self.base_rate[i] + rhs.base_rate[i]) / 2.0)
-                };
-                Self::try_from_simplex(s, a)
-            }
-
-            fn wfuse(&self, rhs: A, gamma_a: $ft) -> Self::Output {
-                let rhs = rhs.into();
-                let sr = rhs.clone().simplex;
-                let s = self.wfuse(sr, gamma_a)?;
-                let a = if ulps_eq!(*self.u(), 0.0) && ulps_eq!(*rhs.u(), 0.0) {
-                    array::from_fn(|i| {
-                        gamma_a * self.base_rate[i] + (1.0 - gamma_a) * rhs.base_rate[i]
-                    })
-                } else if ulps_eq!(*self.u(), 1.0) && ulps_eq!(*rhs.u(), 1.0) {
-                    array::from_fn(|i| (self.base_rate[i] + rhs.base_rate[i]) / 2.0)
-                } else {
-                    let rhs_u = *rhs.u();
-                    let ca = 1.0 - self.u();
-                    let cb = 1.0 - rhs_u;
-                    array::from_fn(|i| {
-                        (self.base_rate[i] * ca + rhs.base_rate[i] * cb) / (2.0 - self.u() - rhs_u)
-                    })
-                };
-                Self::try_from_simplex(s, a)
-            }
-        }
-
-        impl<const N: usize> FusionAssign<&Simplex<$ft, N>, $ft> for Opinion1d<$ft, N> {
-            type Output = Result<(), InvalidValueError>;
-
-            fn fusion_assign(&mut self, rhs: &Simplex<$ft, N>, op: &FusionOp<$ft>) -> Self::Output {
-                self.simplex = match *op {
-                    FusionOp::CumulativeA(gamma_a) => self.cfuse_al(rhs, gamma_a),
-                    FusionOp::CumulativeE(gamma_a) => self.cfuse_ep(rhs, gamma_a),
-                    FusionOp::Averaging(gamma_a) => self.afuse(rhs, gamma_a),
-                    FusionOp::Weighted(gamma_a) => self.wfuse(rhs, gamma_a),
-                }?;
-                Ok(())
-            }
-        }
-
-        impl<const N: usize> FusionAssign<&Opinion1d<$ft, N>, $ft> for Opinion1d<$ft, N> {
-            type Output = Result<(), InvalidValueError>;
-
-            fn fusion_assign(
-                &mut self,
-                rhs: &Opinion1d<$ft, N>,
-                op: &FusionOp<$ft>,
+            fn fuse(
+                &self,
+                lhs: Opinion1dRef<'a, $ft, N>,
+                rhs: Opinion1dRef<'a, $ft, N>,
             ) -> Self::Output {
-                *self = match *op {
-                    FusionOp::CumulativeA(gamma_a) => self.cfuse_al(rhs, gamma_a),
-                    FusionOp::CumulativeE(gamma_a) => self.cfuse_ep(rhs, gamma_a),
-                    FusionOp::Averaging(gamma_a) => self.afuse(rhs, gamma_a),
-                    FusionOp::Weighted(gamma_a) => self.wfuse(rhs, gamma_a),
-                }?;
+                if ulps_eq!(*lhs.u(), 0.0) && ulps_eq!(*rhs.u(), 0.0) {
+                    let gamma_a = 0.5;
+                    let gamma_b = 1.0 - gamma_a;
+                    let b = array::from_fn(|i| gamma_a * lhs.b()[i] + gamma_b * rhs.b()[i]);
+                    let u = 0.0;
+                    let a =
+                        array::from_fn(|i| gamma_a * lhs.base_rate[i] + gamma_b * rhs.base_rate[i]);
+                    let w = Opinion1d::<$ft, N>::new_unchecked(b, u, a);
+                    if matches!(self, FuseOp::ECm) {
+                        return w.op_u_max();
+                    } else {
+                        return Ok(w);
+                    }
+                }
+                let lhs_u = *lhs.u();
+                let rhs_u = *rhs.u();
+                match self {
+                    FuseOp::ACm | FuseOp::ECm => {
+                        let temp = lhs_u + rhs_u - lhs_u * rhs_u;
+                        let b =
+                            array::from_fn(|i| (lhs.b()[i] * rhs_u + rhs.b()[i] * lhs_u) / temp);
+                        let u = lhs_u * rhs_u / temp;
+                        let a = if ulps_eq!(lhs_u, 1.0) && ulps_eq!(rhs_u, 1.0) {
+                            array::from_fn(|i| (lhs.base_rate[i] + rhs.base_rate[i]) / 2.0)
+                        } else {
+                            let temp2 = temp - lhs_u * rhs_u;
+                            let lhs_sum_b = 1.0 - lhs_u;
+                            let rhs_sum_b = 1.0 - rhs_u;
+                            array::from_fn(|i| {
+                                if ulps_eq!(lhs.base_rate[i], rhs.base_rate[i]) {
+                                    lhs.base_rate[i]
+                                } else {
+                                    (lhs.base_rate[i] * rhs_u * lhs_sum_b
+                                        + rhs.base_rate[i] * lhs_u * rhs_sum_b)
+                                        / temp2
+                                }
+                            })
+                        };
+                        let w = Opinion1d::<$ft, N>::try_new(b, u, a);
+                        if matches!(self, FuseOp::ECm) {
+                            w?.op_u_max()
+                        } else {
+                            w
+                        }
+                    }
+                    FuseOp::Avg => {
+                        let temp = lhs_u + rhs_u;
+                        let b =
+                            array::from_fn(|i| (lhs.b()[i] * rhs_u + rhs.b()[i] * lhs_u) / temp);
+                        let u = 2.0 * lhs_u * rhs_u / temp;
+                        let a = array::from_fn(|i| (lhs.base_rate[i] + rhs.base_rate[i]) / 2.0);
+                        Opinion1d::<$ft, N>::try_new(b, u, a)
+                    }
+                    FuseOp::Wgh => {
+                        let b;
+                        let u;
+                        let a;
+                        if ulps_eq!(lhs_u, 1.0) && ulps_eq!(rhs_u, 1.0) {
+                            b = [0.0; N];
+                            u = 1.0;
+                            a = array::from_fn(|i| (lhs.base_rate[i] + rhs.base_rate[i]) / 2.0);
+                        } else {
+                            let lhs_sum_b = 1.0 - lhs_u;
+                            let rhs_sum_b = 1.0 - rhs_u;
+                            let temp = lhs_u + rhs_u - 2.0 * lhs_u * rhs_u;
+                            let temp2 = lhs_sum_b + rhs_sum_b;
+                            b = array::from_fn(|i| {
+                                (lhs.b()[i] * lhs_sum_b * rhs_u + rhs.b()[i] * rhs_sum_b * lhs_u)
+                                    / temp
+                            });
+                            u = temp2 * lhs_u * rhs_u / temp;
+                            a = array::from_fn(|i| {
+                                (lhs.base_rate[i] * lhs_sum_b + rhs.base_rate[i] * rhs_sum_b)
+                                    / temp2
+                            });
+                        }
+                        Opinion1d::<$ft, N>::try_new(b, u, a)
+                    }
+                }
+            }
+        }
+
+        impl<const N: usize> FuseAssign<Opinion1d<$ft, N>> for FuseOp {
+            type Err = InvalidValueError;
+
+            fn fuse_assign(
+                &self,
+                lhs: &mut Opinion1d<$ft, N>,
+                rhs: &Opinion1d<$ft, N>,
+            ) -> Result<(), Self::Err> {
+                *lhs = self.fuse(&(*lhs), &rhs)?;
                 Ok(())
             }
         }
@@ -212,11 +148,13 @@ impl_fusion!(f64);
 pub trait Deduction<X, Y, Cond, U>: Sized {
     type Output;
 
-    /// Computes the conditionally deduced opinion of `self` with a the marginal base rate (MBR)
-    /// by `conds` representing a collection of conditional opinions.
+    /// Computes the conditionally deduced opinion of `self` with
+    /// a the marginal base rate (MBR) given by `conds` representing a collection of conditional opinions.
     /// If all conditional opinions are vacuous, i.e. \\(\forall x. u_{Y|x} = 1\\),
-    /// then MBR cannot be determined and a vacuous opinion is deduced.
+    /// then MBR cannot be determined so return None (vacuous opinion is deduced).
     fn deduce(self, conds: Cond) -> Option<Self::Output>;
+
+    /// Computes the conditionally deduced opinion of `self` with a base rate `ay`.
     fn deduce_with(self, conds: Cond, ay: U) -> Self::Output;
 }
 
@@ -411,7 +349,115 @@ impl_abduction!(f64);
 
 #[cfg(test)]
 mod tests {
-    use crate::mul::{op::Deduction, Opinion1d, Simplex};
+    use crate::mul::{
+        op::{Deduction, Fuse, FuseAssign, FuseOp},
+        Opinion1d, Simplex,
+    };
+
+    fn nround<const N: i32>(v: f32) -> f32 {
+        (v * 10f32.powi(N)).round()
+    }
+
+    fn nfract<const N: i32>(v: f32) -> f32 {
+        (v * 10f32.powi(N)).fract()
+    }
+
+    #[test]
+    fn test_fusion_ref() {
+        let w1 = Opinion1d::<f32, 2>::new([0.5, 0.0], 0.5, [0.25, 0.75]);
+        let a = [0.5, 0.5];
+        let s = Simplex::<f32, 2>::new([0.0, 0.9], 0.1);
+        let w2 = Opinion1d::<f32, 2>::from_simplex_unchecked(s.clone(), a.clone());
+        assert_eq!(
+            FuseOp::ACm.fuse(&w1, &w2).unwrap(),
+            FuseOp::ACm.fuse(w1.as_ref(), (&s, &a).into()).unwrap()
+        );
+        assert_eq!(
+            FuseOp::ECm.fuse(&w1, &w2).unwrap(),
+            FuseOp::ECm.fuse(w1.as_ref(), (&s, &a).into()).unwrap()
+        );
+        assert_eq!(
+            FuseOp::Avg.fuse(&w1, &w2).unwrap(),
+            FuseOp::Avg.fuse(w1.as_ref(), (&s, &a).into()).unwrap()
+        );
+        assert_eq!(
+            FuseOp::Wgh.fuse(&w1, &w2).unwrap(),
+            FuseOp::Wgh.fuse(w1.as_ref(), (&s, &a).into()).unwrap()
+        );
+    }
+
+    #[test]
+    fn test_fusion_dogma() {
+        let w1 =
+            Opinion1d::<f32, 3>::new([0.99, 0.01, 0.0], 0.0, [1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0]);
+        let w2 =
+            Opinion1d::<f32, 3>::new([0.0, 0.01, 0.99], 0.0, [1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0]);
+
+        // A-CBF
+        let w = FuseOp::ACm.fuse(&w1, &w2).unwrap();
+        assert_eq!(w.b().map(nround::<3>), [495.0, 10.0, 495.0]);
+        assert_eq!(nround::<3>(*w.u()), 0.0);
+        assert_eq!(w.base_rate.map(nround::<3>), [333.0, 333.0, 333.0]);
+        // E-CBF
+        let w = FuseOp::ECm.fuse(&w1, &w2).unwrap();
+        assert_eq!(w.b().map(nround::<3>), [485.0, 0.0, 485.0]);
+        assert_eq!(nround::<3>(*w.u()), 30.0);
+        assert_eq!(w.base_rate.map(nround::<3>), [333.0, 333.0, 333.0]);
+        // ABF
+        let w = FuseOp::Avg.fuse(&w1, &w2).unwrap();
+        assert_eq!(w.b().map(nround::<3>), [495.0, 10.0, 495.0]);
+        assert_eq!(nround::<3>(*w.u()), 0.0);
+        assert_eq!(w.base_rate.map(nround::<3>), [333.0, 333.0, 333.0]);
+        // WBF
+        let w = FuseOp::Wgh.fuse(&w1, &w2).unwrap();
+        assert_eq!(w.b().map(nround::<3>), [495.0, 10.0, 495.0]);
+        assert_eq!(nround::<3>(*w.u()), 0.0);
+        assert_eq!(w.base_rate.map(nround::<3>), [333.0, 333.0, 333.0]);
+    }
+
+    #[test]
+    fn test_fusion() {
+        let w1 =
+            Opinion1d::<f32, 3>::new([0.98, 0.01, 0.0], 0.01, [1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0]);
+        let w2 =
+            Opinion1d::<f32, 3>::new([0.0, 0.01, 0.90], 0.09, [1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0]);
+
+        // A-CBF
+        let w = FuseOp::ACm.fuse(&w1, &w2).unwrap();
+        assert_eq!(w.b().map(nround::<3>), [890.0, 10.0, 91.0]);
+        assert_eq!(nround::<3>(*w.u()), 9.0);
+        assert_eq!(w.base_rate.map(nround::<3>), [333.0, 333.0, 333.0]);
+        // E-CBF
+        let w = FuseOp::ECm.fuse(&w1, &w2).unwrap();
+        assert_eq!(w.b().map(nround::<3>), [880.0, 0.0, 81.0]);
+        assert_eq!(nround::<3>(*w.u()), 39.0);
+        assert_eq!(w.base_rate.map(nround::<3>), [333.0, 333.0, 333.0]);
+        // ABF
+        let w = FuseOp::Avg.fuse(&w1, &w2).unwrap();
+        assert_eq!(w.b().map(nround::<3>), [882.0, 10.0, 90.0]);
+        assert_eq!(nround::<3>(*w.u()), 18.0);
+        assert_eq!(w.base_rate.map(nround::<3>), [333.0, 333.0, 333.0]);
+        // WBF
+        let w = FuseOp::Wgh.fuse(&w1, &w2).unwrap();
+        assert_eq!(w.b().map(nround::<3>), [889.0, 10.0, 83.0]);
+        assert_eq!(
+            nround::<3>(*w.u()),
+            18.0 - w.b().map(nfract::<3>).iter().sum::<f32>().round()
+        );
+        assert_eq!(w.base_rate.map(nround::<3>), [333.0, 333.0, 333.0]);
+    }
+
+    #[test]
+    fn test_fusion_assign() {
+        let mut w = Opinion1d::<f32, 2>::new([0.5, 0.25], 0.25, [0.5, 0.5]);
+        let u = Opinion1d::<f32, 2>::new([0.125, 0.75], 0.125, [0.75, 0.25]);
+        let ops = [FuseOp::ACm, FuseOp::ECm, FuseOp::Avg, FuseOp::Wgh];
+        for op in ops {
+            let w2 = op.fuse(&w, &u).unwrap();
+            op.fuse_assign(&mut w, &u).unwrap();
+            assert!(w == w2);
+        }
+    }
 
     #[test]
     fn test_deduction() {
@@ -422,22 +468,13 @@ mod tests {
         ];
         let wy = wx.as_ref().deduce(&wxy).unwrap();
         // base rate
-        assert_eq!(
-            wy.base_rate.map(|a| (a * 10f32.powi(3)).round()),
-            [778.0, 99.0, 123.0]
-        );
+        assert_eq!(wy.base_rate.map(nround::<3>), [778.0, 99.0, 123.0]);
         // projection
         let p = wy.projection();
-        assert_eq!(
-            p.map(|p| (p * 10f32.powi(3)).round()),
-            [148.0, 739.0, 113.0]
-        );
+        assert_eq!(p.map(nround::<3>), [148.0, 739.0, 113.0]);
         // belief
-        assert_eq!(
-            wy.b().map(|p| (p * 10f32.powi(3)).round()),
-            [63.0, 728.0, 100.0]
-        );
+        assert_eq!(wy.b().map(nround::<3>), [63.0, 728.0, 100.0]);
         // uncertainty
-        assert_eq!((wy.u() * 10f32.powi(3)).round(), 109.0)
+        assert_eq!(nround::<3>(*wy.u()), 109.0);
     }
 }

@@ -14,7 +14,7 @@ mod tests {
     use crate::bi::{BOpinion, BSimplex};
     use crate::mul::OpinionRef;
     use crate::mul::{
-        op::{Abduction, Deduction, Fusion, FusionAssign, FusionOp},
+        op::{Abduction, Deduction},
         Opinion1d, Simplex,
     };
 
@@ -85,22 +85,6 @@ mod tests {
     }
 
     #[test]
-    fn test_cfuse_al_mul() {
-        let w1 = Opinion1d::<f32, 2>::new([0.0, 0.3], 0.7, [0.7, 0.3]);
-        let w2 = Opinion1d::<f32, 2>::new([0.7, 0.0], 0.3, [0.3, 0.7]);
-        println!("{:?}", w1.cfuse_al(&w2, 0.0).unwrap());
-    }
-
-    #[test]
-    fn test_cfuse_ep_mul() {
-        let w1 =
-            Opinion1d::<f32, 3>::new([0.98, 0.01, 0.0], 0.01, [1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0]);
-        let w2 =
-            Opinion1d::<f32, 3>::new([0.0, 0.01, 0.90], 0.09, [1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0]);
-        println!("{:?}", w1.cfuse_ep(&w2, 0.0).unwrap());
-    }
-
-    #[test]
     fn test_cum_fusion_bo() {
         let w0 = BOpinion::<f32>::new(0.5, 0.0, 0.5, 0.5);
         let w1 = BOpinion::<f32>::new(0.0, 0.0, 1.0, 0.5);
@@ -149,30 +133,6 @@ mod tests {
         assert!(w1.cfuse(&w2).is_ok());
         assert!(w1.afuse(&w2, 0.5).is_ok());
         assert!(w1.wfuse(&w2, 0.5).is_ok());
-    }
-
-    #[test]
-    fn test_fusion_mop() {
-        let w1 = Opinion1d::<f32, 2>::new([0.5, 0.0], 0.5, [0.25, 0.75]);
-        let a = [0.5, 0.5];
-        let s = Simplex::<f32, 2>::new([0.0, 0.9], 0.1);
-        let w2 = Opinion1d::<f32, 2>::from_simplex_unchecked(s.clone(), a.clone());
-        assert_eq!(
-            w1.cfuse_al(&w2, 0.5).unwrap(),
-            w1.cfuse_al((&s, &a), 0.5).unwrap()
-        );
-        assert_eq!(
-            w1.cfuse_ep(&w2, 0.5).unwrap(),
-            w1.cfuse_ep((&s, &a), 0.5).unwrap()
-        );
-        assert_eq!(
-            w1.afuse(&w2, 0.5).unwrap(),
-            w1.afuse((&s, &a), 0.5).unwrap()
-        );
-        assert_eq!(
-            w1.wfuse(&w2, 0.5).unwrap(),
-            w1.wfuse((&s, &a), 0.5).unwrap()
-        );
     }
 
     #[test]
@@ -290,23 +250,5 @@ mod tests {
         let mw_o = Simplex::<f32, 2>::new_unchecked([0.0, 0.0], 1.0);
         let (mw_x, _) = Abduction::abduce(&mw_o, &conds_ox, ax).unwrap();
         println!("{:?}", mw_x);
-    }
-
-    #[test]
-    fn test_fusion_assign() {
-        let mut w = Opinion1d::<f32, 2>::new([0.5, 0.25], 0.25, [0.5, 0.5]);
-        let u = Opinion1d::<f32, 2>::new([0.125, 0.75], 0.125, [0.75, 0.25]);
-        let w2 = w.cfuse_al(&u, 0.5).unwrap();
-        w.fusion_assign(&u, &FusionOp::CumulativeA(0.5)).unwrap();
-        assert!(w == w2);
-        let w2 = w.cfuse_ep(&u, 0.5).unwrap();
-        w.fusion_assign(&u, &FusionOp::CumulativeE(0.5)).unwrap();
-        assert!(w == w2);
-        let w2 = w.afuse(&u, 0.5).unwrap();
-        w.fusion_assign(&u, &FusionOp::Averaging(0.5)).unwrap();
-        assert!(w == w2);
-        let w2 = w.wfuse(&u, 0.5).unwrap();
-        w.fusion_assign(&u, &FusionOp::Weighted(0.5)).unwrap();
-        assert!(w == w2);
     }
 }
