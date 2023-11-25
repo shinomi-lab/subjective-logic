@@ -16,9 +16,9 @@ pub enum FuseOp {
     Wgh,
 }
 
-pub trait FuseAssign<T> {
+pub trait FuseAssign<L, R> {
     type Err;
-    fn fuse_assign(&self, lhs: &mut T, rhs: &T) -> Result<(), Self::Err>;
+    fn fuse_assign(&self, lhs: &mut L, rhs: R) -> Result<(), Self::Err>;
 }
 
 pub trait Fuse<T> {
@@ -126,15 +126,29 @@ macro_rules! impl_fusion {
             }
         }
 
-        impl<const N: usize> FuseAssign<Opinion1d<$ft, N>> for FuseOp {
+        impl<'a, const N: usize> FuseAssign<Opinion1d<$ft, N>, &'a Opinion1d<$ft, N>> for FuseOp {
             type Err = InvalidValueError;
 
             fn fuse_assign(
                 &self,
                 lhs: &mut Opinion1d<$ft, N>,
-                rhs: &Opinion1d<$ft, N>,
+                rhs: &'a Opinion1d<$ft, N>,
             ) -> Result<(), Self::Err> {
-                *lhs = self.fuse(&(*lhs), &rhs)?;
+                self.fuse_assign(lhs, rhs.as_ref())
+            }
+        }
+
+        impl<'a, const N: usize> FuseAssign<Opinion1d<$ft, N>, Opinion1dRef<'a, $ft, N>>
+            for FuseOp
+        {
+            type Err = InvalidValueError;
+
+            fn fuse_assign(
+                &self,
+                lhs: &mut Opinion1d<$ft, N>,
+                rhs: Opinion1dRef<'a, $ft, N>,
+            ) -> Result<(), Self::Err> {
+                *lhs = self.fuse(lhs.as_ref(), rhs)?;
                 Ok(())
             }
         }
