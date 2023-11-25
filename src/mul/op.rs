@@ -209,62 +209,67 @@ impl_fusion!(f32);
 impl_fusion!(f64);
 
 /// The deduction operator.
-pub trait Deduction<X, Y, Cond, U>
-where
-    U: Index<Y>,
-{
+pub trait Deduction<X, Y, Cond, U>: Sized {
     type Output;
 
-    /// Computes the conditionally deduced opinion of `self` with a base rate vector `ay`
+    /// Computes the conditionally deduced opinion of `self` with a the marginal base rate (MBR)
     /// by `conds` representing a collection of conditional opinions.
-    fn deduce(self, conds: Cond, ay: U) -> Self::Output;
+    /// If all conditional opinions are vacuous, i.e. $$\forall x. u_{Y|x} = 1$$,
+    /// then MBR cannot be determined and a vacuous opinion is deduced.
+    fn deduce(self, conds: Cond) -> Option<Self::Output>;
+    fn deduce_with(self, conds: Cond, ay: U) -> Self::Output;
 }
 
 macro_rules! impl_deduction {
     ($ft: ty) => {
-        impl<'a, 'b: 'a, Cond, X, Y, T, U> Deduction<X, Y, &'a Cond, U> for &'b Opinion<T, $ft>
+        impl<'b, X, Y, Cond, U, T> Deduction<X, Y, &'b Cond, U> for &'b Opinion<T, $ft>
         where
             Cond: IndexedContainer<X>,
-            &'a Cond::Output: Into<&'a SimplexBase<U, $ft>> + 'a,
+            for<'a> &'a Cond::Output: Into<&'a SimplexBase<U, $ft>>,
             T: IndexedContainer<X, Output = $ft>,
-            U: IndexedContainer<Y, Output = $ft> + 'a,
+            U: IndexedContainer<Y, Output = $ft>,
             X: Copy,
             Y: Copy,
         {
             type Output = Opinion<U, $ft>;
+            fn deduce(self, conds: &'b Cond) -> Option<Self::Output> {
+                self.as_ref().deduce(conds)
+            }
 
-            fn deduce(self, conds: &'a Cond, ay: U) -> Self::Output {
-                self.as_ref().deduce(conds, ay)
+            fn deduce_with(self, conds: &'b Cond, ay: U) -> Self::Output {
+                self.as_ref().deduce_with(conds, ay)
             }
         }
 
-        impl<'a, 'b: 'a, Cond, X, Y, T, U> Deduction<X, Y, &'a Cond, U> for OpinionRef<'b, T, $ft>
+        impl<'b, X, Y, Cond, U, T> Deduction<X, Y, &'b Cond, U> for OpinionRef<'b, T, $ft>
         where
-            Cond: IndexedContainer<X>,
-            &'a Cond::Output: Into<&'a SimplexBase<U, $ft>> + 'a,
             T: IndexedContainer<X, Output = $ft>,
-            U: IndexedContainer<Y, Output = $ft> + 'a,
+            U: IndexedContainer<Y, Output = $ft> + MBR<X, Y, T, &'b Cond, U, $ft>,
+            Cond: IndexedContainer<X>,
+            for<'a> &'a Cond::Output: Into<&'a SimplexBase<U, $ft>>,
             X: Copy,
             Y: Copy,
         {
             type Output = Opinion<U, $ft>;
 
-            fn deduce(self, conds: &'a Cond, ay: U) -> Self::Output {
-                // where
+            fn deduce(self, conds: &'b Cond) -> Option<Self::Output> {
+                let ay = U::marginal_base_rate(&self.base_rate, conds)?;
+                Some(self.deduce_with(conds, ay))
+            }
+
+            fn deduce_with(self, conds: &'b Cond, ay: U) -> Self::Output {
                 assert!(
                     T::SIZE > 0 && U::SIZE > 1,
                     "conds.len() > 0 and ay.len() > 1 must hold."
                 );
-                let ay: U = conds.marginal_base_rate(self.base_rate).unwrap_or(ay);
-
-                let cond_p: Cond::Map<U> = Cond::map(|x| (&conds[x]).into().projection(&ay));
+                let cond_p: Cond::Map<U> = Cond::map(|x| conds[x].into().projection(&ay));
                 let pyhx: U =
                     U::from_fn(|y| Cond::keys().map(|x| self.base_rate[x] * cond_p[x][y]).sum());
                 let uyhx = U::keys()
                     .map(|y| {
                         (pyhx[y]
                             - Cond::keys()
-                                .map(|x| (&conds[x]).into().belief[y])
+                                .map(|x| conds[x].into().belief[y])
                                 .reduce(<$ft>::min)
                                 .unwrap())
                             / ay[y]
@@ -273,7 +278,7 @@ macro_rules! impl_deduction {
                     .unwrap();
                 let u = uyhx
                     - Cond::keys()
-                        .map(|x| (uyhx - (&conds[x]).into().uncertainty) * self.b()[x])
+                        .map(|x| (uyhx - conds[x].into().uncertainty) * self.b()[x])
                         .sum::<$ft>();
                 let p = self.projection();
                 let b =
@@ -370,7 +375,8 @@ where
     /// Computes the conditionally abduced opinion of `self` with a base rate vector `ax`
     /// by `conds` representing a collection of conditional opinions.
     /// If a marginal base rate cannot be computed from `conds`, ay is used instead.
-    fn abduce(self, conds: Cond, ax: T, ay: Option<U>) -> Option<(Self::Output, U)>;
+    fn abduce(self, conds: Cond, ax: T) -> Option<(Self::Output, U)>;
+    fn abduce_with(self, conds: Cond, ax: T, ay: &U) -> Self::Output;
 }
 
 macro_rules! impl_abduction {
@@ -381,19 +387,20 @@ macro_rules! impl_abduction {
                 + IndexedContainer<X, Output = SimplexBase<U, $ft>>,
             Cond::InvCond: IndexedContainer<Y, Output = SimplexBase<T, $ft>> + 'a,
             T: IndexedContainer<X, Output = $ft> + 'a,
-            U: IndexedContainer<Y, Output = $ft>,
+            U: IndexedContainer<Y, Output = $ft> + MBR<X, Y, T, &'a Cond, U, $ft>,
             X: Copy,
             Y: Copy,
         {
             type Output = Opinion<T, $ft>;
 
-            fn abduce(self, conds_yx: &'a Cond, ax: T, ay: Option<U>) -> Option<(Self::Output, U)> {
-                let ay: U = MBR::marginal_base_rate(conds_yx, &ax).or(ay)?;
-                let inv_conds = InverseCondition::inverse(conds_yx, &ax, &ay);
-                Some((
-                    OpinionRef::<U, $ft>::from((self, &ay)).deduce(&inv_conds, ax),
-                    ay,
-                ))
+            fn abduce(self, conds: &'a Cond, ax: T) -> Option<(Self::Output, U)> {
+                let ay = U::marginal_base_rate(&ax, conds)?;
+                Some((self.abduce_with(conds, ax, &ay), ay))
+            }
+
+            fn abduce_with(self, conds: &'a Cond, ax: T, ay: &U) -> Self::Output {
+                let inv_conds = InverseCondition::inverse(conds, &ax, ay);
+                OpinionRef::<U, $ft>::from((self, ay)).deduce_with(&inv_conds, ax)
             }
         }
     };
@@ -401,3 +408,36 @@ macro_rules! impl_abduction {
 
 impl_abduction!(f32);
 impl_abduction!(f64);
+
+#[cfg(test)]
+mod tests {
+    use crate::mul::{op::Deduction, Opinion1d, Simplex};
+
+    #[test]
+    fn test_deduction() {
+        let wx = Opinion1d::<f32, 2>::new([0.9, 0.0], 0.1, [0.1, 0.9]);
+        let wxy = [
+            Simplex::<f32, 3>::new([0.0, 0.8, 0.1], 0.1),
+            Simplex::<f32, 3>::new([0.7, 0.0, 0.1], 0.2),
+        ];
+        let wy = wx.as_ref().deduce(&wxy).unwrap();
+        // base rate
+        assert_eq!(
+            wy.base_rate.map(|a| (a * 10f32.powi(3)).round()),
+            [778.0, 99.0, 123.0]
+        );
+        // projection
+        let p = wy.projection();
+        assert_eq!(
+            p.map(|p| (p * 10f32.powi(3)).round()),
+            [148.0, 739.0, 113.0]
+        );
+        // belief
+        assert_eq!(
+            wy.b().map(|p| (p * 10f32.powi(3)).round()),
+            [63.0, 728.0, 100.0]
+        );
+        // uncertainty
+        assert_eq!((wy.u() * 10f32.powi(3)).round(), 109.0)
+    }
+}

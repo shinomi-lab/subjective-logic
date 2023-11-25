@@ -1,4 +1,4 @@
-use super::{IndexedContainer, Opinion, Opinion1dRef};
+use super::{IndexedContainer, Opinion, Opinion1d, Opinion1dRef};
 use std::{
     ops::{Index, IndexMut},
     usize,
@@ -169,6 +169,12 @@ macro_rules! impl_ha {
                 from_fn!(f;$n)
             }
         }
+
+        impl<V, const $k: usize$(, const $ks: usize)*> $ha<V, $k$(, $ks)*> {
+            pub fn len(&self) -> usize {
+                Self::SIZE
+            }
+        }
     };
 }
 
@@ -209,6 +215,47 @@ pub struct HigherArr2<V, const K0: usize, const K1: usize>(Box<HA2<V, K0, K1>>);
 pub struct HigherArr3<V, const K0: usize, const K1: usize, const K2: usize>(
     Box<HA3<V, K0, K1, K2>>,
 );
+
+#[allow(unused_macros)]
+macro_rules! ha1 {
+    [$($e:expr),*$(,)?] => {
+        crate::mul::prod::HA1([$($e,)*])
+    };
+    (ext; [$($e:expr),*$(,)?]) => {
+        ha1!($($e,)*)
+    };
+}
+
+#[allow(unused_macros)]
+macro_rules! ha2 {
+    [$($e:tt),*$(,)?] => {
+        crate::mul::prod::HA2([$(ha1!(ext; $e),)*])
+    };
+    (ext; [$($e:tt),*$(,)?]) => {
+        ha2!($($e,)*)
+    }
+}
+
+#[allow(unused_macros)]
+macro_rules! ha3 {
+    [$($e:tt),*$(,)?] => {
+        crate::mul::prod::HA3([$(ha2!(ext; $e),)*])
+    };
+}
+
+#[macro_export]
+macro_rules! harr2 {
+    [$e:tt$(,$es:tt)*] => {
+        crate::mul::prod::HigherArr2(Box::new(ha2!($e$(,$es)*)))
+    };
+}
+
+#[macro_export]
+macro_rules! harr3 {
+    [$e:tt$(,$es:tt)*] => {
+        crate::mul::prod::HigherArr3(Box::new(ha3!($e$(,$es)*)))
+    };
+}
 
 macro_rules! impl_higher_arr {
     ($n:tt, $ha:ident, $higher_arr:ident [$k:ident$(, $ks:ident)*]) => {
@@ -284,6 +331,15 @@ macro_rules! impl_products {
         }
 
         impl<'a, const D0: usize, const D1: usize>
+            Product2<&Opinion1d<$ft, D0>, &Opinion1d<$ft, D1>>
+            for Opinion<HigherArr2<$ft, D0, D1>, $ft>
+        {
+            fn product2(w0: &Opinion1d<$ft, D0>, w1: &Opinion1d<$ft, D1>) -> Self {
+                Product2::product2(w0.as_ref(), w1.as_ref())
+            }
+        }
+
+        impl<'a, const D0: usize, const D1: usize>
             Product2<Opinion1dRef<'a, $ft, D0>, Opinion1dRef<'a, $ft, D1>>
             for Opinion<HigherArr2<$ft, D0, D1>, $ft>
         {
@@ -332,7 +388,7 @@ impl_products!(f64);
 #[cfg(test)]
 mod tests {
     use super::{HigherArr2, HigherArr3, HigherRange, Product2};
-    use crate::mul::{IndexedContainer, Opinion, Opinion1d};
+    use crate::mul::{op::Deduction, IndexedContainer, Opinion, Opinion1d, Simplex};
 
     fn higher_range_checker2(size: [usize; 2]) {
         let mut r = HigherRange::new(size);
@@ -383,6 +439,19 @@ mod tests {
     }
 
     #[test]
+    fn ha_macro() {
+        let h = ha1![std::vec![0], std::vec![1], std::vec![1]];
+        let h2 = ha2![[std::vec![0], std::vec![1]], [std::vec![1], std::vec![1]]];
+        let h3 = ha3![
+            [[std::vec![0], std::vec![1]]],
+            [[std::vec![1], std::vec![1]]]
+        ];
+        assert_eq!(h.len(), 3);
+        assert_eq!(h2.len(), 4);
+        assert_eq!(h3.len(), 4);
+    }
+
+    #[test]
     fn test_iter2() {
         let c: HigherArr2<_, 2, 3> = HigherArr2::from_fn(|[i, j]| (i, j));
         let mut iter = (&c).into_iter();
@@ -419,5 +488,41 @@ mod tests {
         for d in HigherRange::new([2, 3]) {
             println!("{}", (p[d] - w01.b()[d]) / w01.base_rate[d]);
         }
+    }
+
+    #[test]
+    fn test_deduction() {
+        let wx = Opinion1d::<f32, 2>::new([0.9, 0.0], 0.1, [0.1, 0.9]);
+        let wy = Opinion1d::<f32, 2>::new([0.5, 0.5], 0.0, [0.5, 0.5]);
+        let wxy = Opinion::product2(&wx, &wy);
+        let conds = harr2![
+            [
+                Simplex::<f32, 3>::new([0.0, 0.8, 0.1], 0.1),
+                Simplex::<f32, 3>::new([0.0, 0.8, 0.1], 0.1),
+            ],
+            [
+                Simplex::<f32, 3>::new([0.7, 0.0, 0.1], 0.2),
+                Simplex::<f32, 3>::new([0.7, 0.0, 0.1], 0.2),
+            ]
+        ];
+        let wy = wxy.as_ref().deduce(&conds).unwrap();
+        // base rate
+        assert_eq!(
+            wy.base_rate.map(|a| (a * 10f32.powi(3)).round()),
+            [778.0, 99.0, 123.0]
+        );
+        // projection
+        let p = wy.projection();
+        assert_eq!(
+            p.map(|p| (p * 10f32.powi(3)).round()),
+            [148.0, 739.0, 113.0]
+        );
+        // belief
+        assert_eq!(
+            wy.b().map(|p| (p * 10f32.powi(3)).round()),
+            [63.0, 728.0, 100.0]
+        );
+        // uncertainty
+        assert_eq!((wy.u() * 10f32.powi(3)).round(), 109.0)
     }
 }

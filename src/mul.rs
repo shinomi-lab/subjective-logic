@@ -17,9 +17,9 @@ pub struct SimplexBase<T, V> {
     pub uncertainty: V,
 }
 
-impl<T: Display, V: Display> Display for SimplexBase<T, V> {
+impl<T: std::fmt::Debug, V: Display> Display for SimplexBase<T, V> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{},{}", self.belief, self.uncertainty)
+        write!(f, "{:?},{}", self.belief, self.uncertainty)
     }
 }
 
@@ -111,12 +111,6 @@ impl<T, U> OpinionRef<'_, T, U> {
     }
 }
 
-impl<'a, T, U> From<&'a Opinion<T, U>> for &'a SimplexBase<T, U> {
-    fn from(value: &'a Opinion<T, U>) -> Self {
-        &value.simplex
-    }
-}
-
 impl<'a, 'b: 'a, T, U> From<(&'a SimplexBase<T, U>, &'b T)> for OpinionRef<'a, T, U> {
     fn from(value: (&'a SimplexBase<T, U>, &'b T)) -> Self {
         OpinionBase {
@@ -199,13 +193,14 @@ macro_rules! impl_simplex {
                     ));
                 }
                 if u.out_of_range(0.0, 1.0) {
-                    return Err(InvalidValueError(format!("u ∈ [0,1] is not satisfied")));
+                    return Err(InvalidValueError("u ∈ [0,1] is not satisfied".to_string()));
                 }
 
                 for i in 0..N {
                     if b[i].out_of_range(0.0, 1.0) {
                         return Err(InvalidValueError(format!(
-                            "b[{i}] ∈ [0,1] is not satisfied"
+                            "b[{}] ∈ [0,1] is not satisfied",
+                            i
                         )));
                     }
                 }
@@ -360,40 +355,36 @@ impl<T, const N: usize> IndexedContainer<usize> for [T; N] {
     }
 }
 
-trait MBR<'a, X, Y, T, U, V>
-where
-    T: Index<X, Output = V>,
-    U: Index<Y, Output = V>,
-{
-    fn marginal_base_rate(&'a self, ax: &'a T) -> Option<U>;
+trait MBR<X, Y, T, Cond, U, V> {
+    fn marginal_base_rate(ax: &T, conds: Cond) -> Option<U>;
 }
 
 macro_rules! impl_mbr {
     ($ft: ty) => {
-        impl<'a, X, Y, T, U, SimSet> MBR<'a, X, Y, T, U, $ft> for SimSet
+        impl<'a, X, Y, T, Cond, U> MBR<X, Y, T, &'a Cond, U, $ft> for U
         where
-            SimSet: IndexedContainer<X>,
-            &'a SimSet::Output: Into<&'a SimplexBase<U, $ft>> + 'a,
             T: Index<X, Output = $ft>,
-            U: IndexedContainer<Y, Output = $ft> + 'a,
+            Cond: IndexedContainer<X>,
+            for<'b> &'b Cond::Output: Into<&'b SimplexBase<U, $ft>>,
+            U: IndexedContainer<Y, Output = $ft>,
             X: Copy,
             Y: Copy,
         {
-            fn marginal_base_rate(&'a self, ax: &'a T) -> Option<U> {
+            fn marginal_base_rate(ax: &T, conds: &'a Cond) -> Option<U> {
                 if ulps_eq!(
-                    SimSet::keys()
-                        .map(|x| (&self[x]).into().uncertainty)
+                    Cond::keys()
+                        .map(|x| (&conds[x]).into().uncertainty)
                         .sum::<$ft>(),
-                    SimSet::SIZE as $ft
+                    Cond::SIZE as $ft
                 ) {
                     return None;
                 }
                 let ay = U::from_fn(|y| {
-                    let temp = SimSet::keys()
-                        .map(|x| ax[x] * (&self[x]).into().uncertainty)
+                    let temp = Cond::keys()
+                        .map(|x| ax[x] * (&conds[x]).into().uncertainty)
                         .sum::<$ft>();
-                    let temp2 = SimSet::keys()
-                        .map(|x| ax[x] * (&self[x]).into().belief[y])
+                    let temp2 = Cond::keys()
+                        .map(|x| ax[x] * (&conds[x]).into().belief[y])
                         .sum::<$ft>();
                     if temp <= <$ft>::EPSILON {
                         temp2

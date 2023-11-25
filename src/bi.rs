@@ -5,6 +5,80 @@ use crate::approx_ext::ApproxRange;
 use crate::errors::InvalidValueError;
 use crate::mul::Simplex;
 
+/// The simplex of a binomial opinion, from which a base rate is excluded.
+#[derive(Debug, PartialEq)]
+pub struct BSimplex<T>(pub Simplex<T, 2>);
+
+impl<T> BSimplex<T> {
+    fn new_unchecked(b: T, d: T, u: T) -> Self {
+        Self(Simplex::new_unchecked([b, d], u))
+    }
+
+    fn b(&self) -> &T {
+        &self.0.belief[0]
+    }
+
+    fn d(&self) -> &T {
+        &self.0.belief[1]
+    }
+
+    fn u(&self) -> &T {
+        &self.0.uncertainty
+    }
+}
+
+impl<T: Display> Display for BSimplex<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{},{},{}", self.b(), self.d(), self.u())
+    }
+}
+
+macro_rules! impl_simplex {
+    ($ft: ty) => {
+        impl BSimplex<$ft> {
+            /// Creates a new simplex of a binomial opinion from parameters, which must satisfy the following conditions:
+            /// $$
+            /// \begin{aligned}
+            /// \mathsf b + \mathsf d + \mathsf u \&= 1\quad\text{where }
+            /// \mathsf b \in [0, 1], \mathsf u \in [0, 1],\\\\
+            /// \mathsf a \in [0, 1].
+            /// \end{aligned}
+            /// $$
+            ///
+            /// # Errors
+            /// If even pameter does not satisfy the conditions, an error is returned.
+            pub fn try_new(b: $ft, d: $ft, u: $ft) -> Result<Self, InvalidValueError> {
+                if ulps_ne!(b + d + u, 1.0) {
+                    return Err(InvalidValueError(
+                        "b + d + u = 1 is not satisfied".to_string(),
+                    ));
+                }
+                if b.out_of_range(0.0, 1.0) {
+                    return Err(InvalidValueError("b ∈ [0,1] is not satisfied".to_string()));
+                }
+                if d.out_of_range(0.0, 1.0) {
+                    return Err(InvalidValueError("d ∈ [0,1] is not satisfied".to_string()));
+                }
+                if u.out_of_range(0.0, 1.0) {
+                    return Err(InvalidValueError("u ∈ [0,1] is not satisfied".to_string()));
+                }
+                Ok(Self(Simplex::new_unchecked([b, d], u)))
+            }
+
+            /// Creates a new simplex of a binomial opinion from parameters which reqiure the same conditions as `try_new`.
+            ///
+            /// # Panics
+            /// Panics if even pameter does not satisfy the conditions.
+            pub fn new(b: $ft, d: $ft, u: $ft) -> Self {
+                Self::try_new(b, d, u).unwrap()
+            }
+        }
+    };
+}
+
+impl_simplex!(f32);
+impl_simplex!(f64);
+
 /// A binomial opinion.
 #[derive(Debug, PartialEq)]
 pub struct BOpinion<T> {
@@ -14,7 +88,7 @@ pub struct BOpinion<T> {
 
 impl<T: Display> Display for BOpinion<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{},{},{},{}", self.b(), self.d(), self.u(), self.a())
+        write!(f, "{},{}", self.simplex, self.base_rate)
     }
 }
 
@@ -58,24 +132,13 @@ macro_rules! impl_bop {
             /// # Errors
             /// If even pameter does not satisfy the conditions, an error is returned.
             pub fn try_new(b: $ft, d: $ft, u: $ft, a: $ft) -> Result<Self, InvalidValueError> {
-                if ulps_ne!(b + d + u, 1.0) {
-                    return Err(InvalidValueError(
-                        "b + d + u = 1 is not satisfied".to_string(),
-                    ));
-                }
-                if b.out_of_range(0.0, 1.0) {
-                    return Err(InvalidValueError("b ∈ [0,1] is not satisfied".to_string()));
-                }
-                if d.out_of_range(0.0, 1.0) {
-                    return Err(InvalidValueError("d ∈ [0,1] is not satisfied".to_string()));
-                }
-                if u.out_of_range(0.0, 1.0) {
-                    return Err(InvalidValueError("u ∈ [0,1] is not satisfied".to_string()));
-                }
                 if a.out_of_range(0.0, 1.0) {
                     return Err(InvalidValueError("a ∈ [0,1] is not satisfied".to_string()));
                 }
-                Ok(Self::new_unchecked(b, d, u, a))
+                Ok(Self {
+                    simplex: BSimplex::<$ft>::try_new(b, d, u)?,
+                    base_rate: a,
+                })
             }
 
             /// Creates a new binomial opinion from parameters which reqiure the same conditions as `try_new`.
@@ -190,11 +253,8 @@ macro_rules! impl_bop {
 
             /// Computes the conditionally deduced opinion of `self` by a two length array of conditional opinions `cond`.
             /// If `self.u()` is equal to `0.0`, this function panics.
-            pub fn deduce<'a, A>(&self, cond: &'a [A; 2], ay: $ft) -> Self
-            where
-                &'a A: Into<&'a BSimplex<$ft>>,
-            {
-                let cond: [&BSimplex<$ft>; 2] = [(&cond[0]).into(), (&cond[1]).into()];
+            pub fn deduce(&self, cond: &[BSimplex<$ft>; 2], ay: $ft) -> Self {
+                // let cond: [&BSimplex<$ft>; 2] = [(&cond[0]).into(), (&cond[1]).into()];
                 let rvax = (1.0 - self.base_rate);
                 let bi = self.b() * cond[0].b()
                     + self.d() * cond[1].b()
@@ -362,36 +422,8 @@ macro_rules! impl_bop {
 impl_bop!(f32);
 impl_bop!(f64);
 
-/// The simplex of a binomial opinion, from which a base rate is excluded.
-#[derive(Debug, PartialEq)]
-pub struct BSimplex<T>(pub Simplex<T, 2>);
-
-impl<T> BSimplex<T> {
-    fn new_unchecked(b: T, d: T, u: T) -> Self {
-        Self(Simplex::new_unchecked([b, d], u))
-    }
-
-    fn b(&self) -> &T {
-        &self.0.belief[0]
-    }
-
-    fn d(&self) -> &T {
-        &self.0.belief[1]
-    }
-
-    fn u(&self) -> &T {
-        &self.0.uncertainty
-    }
-}
-
-impl<'a, T> From<&'a BOpinion<T>> for &'a BSimplex<T> {
-    fn from(value: &'a BOpinion<T>) -> Self {
-        &value.simplex
-    }
-}
-
-impl<'a, T> From<&'a BOpinion<T>> for &'a Simplex<T, 2> {
-    fn from(value: &'a BOpinion<T>) -> Self {
-        &value.simplex.0
+impl<'a, T> From<&'a BSimplex<T>> for &'a Simplex<T, 2> {
+    fn from(value: &'a BSimplex<T>) -> Self {
+        &value.0
     }
 }
