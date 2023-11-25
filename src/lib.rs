@@ -12,10 +12,9 @@ mod tests {
     use approx::{assert_relative_eq, assert_ulps_eq};
 
     use crate::bi::{BOpinion, BSimplex};
-    use crate::mul::OpinionRef;
     use crate::mul::{
         op::{Abduction, Deduction},
-        Opinion1d, Simplex,
+        Opinion1d, OpinionRef, Projection, Simplex,
     };
 
     #[test]

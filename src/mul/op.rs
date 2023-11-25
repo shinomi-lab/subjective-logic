@@ -2,7 +2,8 @@ use approx::ulps_eq;
 use std::{array, ops::Index};
 
 use super::{
-    IndexedContainer, Opinion, Opinion1d, Opinion1dRef, OpinionRef, Simplex, SimplexBase, MBR,
+    IndexedContainer, Opinion, Opinion1d, Opinion1dRef, OpinionRef, Projection, Simplex,
+    SimplexBase, MBR,
 };
 use crate::errors::InvalidValueError;
 
@@ -397,7 +398,7 @@ impl_abduction!(f64);
 mod tests {
     use crate::mul::{
         op::{Deduction, Fuse, FuseAssign, FuseOp},
-        Opinion1d, OpinionRef, Simplex,
+        Opinion1d, OpinionRef, Projection, Simplex,
     };
 
     fn nround<const N: i32>(v: f32) -> f32 {

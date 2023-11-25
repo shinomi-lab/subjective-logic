@@ -126,24 +126,29 @@ impl<'a, T, U> From<&'a Opinion<T, U>> for OpinionRef<'a, T, U> {
     }
 }
 
+pub trait Projection<Idx, T> {
+    /// Computes the probability projection of `self`.
+    fn projection(&self) -> T;
+}
+
 macro_rules! impl_projection {
     ($ft: ty) => {
-        /// The probability projection of `self`.
-        impl<T> Opinion<T, $ft> {
-            pub fn projection<Idx: Copy>(&self) -> T
-            where
-                T: IndexedContainer<Idx, Output = $ft>,
-            {
+        impl<Idx, T> Projection<Idx, T> for Opinion<T, $ft>
+        where
+            T: IndexedContainer<Idx, Output = $ft>,
+            Idx: Copy,
+        {
+            fn projection(&self) -> T {
                 self.as_ref().projection()
             }
         }
 
-        /// The probability projection of `self`.
-        impl<'a, T> OpinionRef<'a, T, $ft> {
-            pub fn projection<Idx: Copy>(&self) -> T
-            where
-                T: IndexedContainer<Idx, Output = $ft>,
-            {
+        impl<'a, Idx, T> Projection<Idx, T> for OpinionRef<'a, T, $ft>
+        where
+            T: IndexedContainer<Idx, Output = $ft>,
+            Idx: Copy,
+        {
+            fn projection(&self) -> T {
                 T::from_fn(|idx| self.b()[idx] + self.base_rate[idx] * self.u())
             }
         }
@@ -153,7 +158,7 @@ macro_rules! impl_projection {
             where
                 T: IndexedContainer<Idx, Output = $ft>,
             {
-                T::from_fn(|i| self.belief[i] + self.uncertainty * a[i])
+                OpinionRef::from((self, a)).projection()
             }
         }
     };
@@ -161,6 +166,52 @@ macro_rules! impl_projection {
 
 impl_projection!(f32);
 impl_projection!(f64);
+
+pub trait Discount<Idx, T, V> {
+    type Output;
+    /// Computes trust discounting of `self` with a referral trust `t`.
+    fn discount(&self, t: V) -> Self::Output;
+}
+
+macro_rules! impl_discount {
+    ($ft: ty) => {
+        impl<'a, Idx, T> Discount<Idx, T, $ft> for SimplexBase<T, $ft>
+        where
+            T: IndexedContainer<Idx, Output = $ft> + Clone,
+        {
+            type Output = SimplexBase<T, $ft>;
+            fn discount(&self, t: $ft) -> Self::Output {
+                SimplexBase {
+                    belief: T::from_fn(|i| self.b()[i] * t),
+                    uncertainty: 1.0 - t * (1.0 - self.u()),
+                }
+            }
+        }
+
+        impl<'a, Idx, T> Discount<Idx, T, $ft> for OpinionRef<'a, T, $ft>
+        where
+            T: IndexedContainer<Idx, Output = $ft> + Clone,
+        {
+            type Output = Opinion<T, $ft>;
+            fn discount(&self, t: $ft) -> Self::Output {
+                Opinion::from_simplex_unchecked(self.simplex.discount(t), (*self.base_rate).clone())
+            }
+        }
+
+        impl<Idx, T> Discount<Idx, T, $ft> for Opinion<T, $ft>
+        where
+            T: IndexedContainer<Idx, Output = $ft> + Clone,
+        {
+            type Output = Opinion<T, $ft>;
+            fn discount(&self, t: $ft) -> Self::Output {
+                self.as_ref().discount(t)
+            }
+        }
+    };
+}
+
+impl_discount!(f32);
+impl_discount!(f64);
 
 /// The reference of a simplex of a multinomial opinion, from which a base rate is excluded.
 pub type Simplex<T, const N: usize> = SimplexBase<[T; N], T>;
@@ -400,3 +451,21 @@ macro_rules! impl_mbr {
 
 impl_mbr!(f32);
 impl_mbr!(f64);
+
+#[cfg(test)]
+mod tests {
+    use approx::ulps_eq;
+
+    use super::{Discount, Opinion1d};
+
+    #[test]
+    fn test_discount() {
+        let w = Opinion1d::<f32, 2>::new([0.2, 0.2], 0.6, [0.5, 0.5]);
+        let w2 = w.discount(0.5);
+        assert!(ulps_eq!(w2.b()[0], 0.1));
+        assert!(ulps_eq!(w2.b()[1], 0.1));
+        assert!(ulps_eq!(*w2.u(), 1.0 - 0.2));
+        assert!(ulps_eq!(w2.b()[0] + w2.b()[1] + w2.u(), 1.0));
+        assert_eq!(w2.base_rate, w.base_rate);
+    }
+}

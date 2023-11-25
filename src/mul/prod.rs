@@ -1,4 +1,4 @@
-use super::{IndexedContainer, Opinion, Opinion1d, Opinion1dRef};
+use super::{IndexedContainer, Opinion, Opinion1d, Opinion1dRef, Projection};
 use std::{
     ops::{Index, IndexMut},
     usize,
@@ -387,7 +387,7 @@ impl_products!(f64);
 
 #[cfg(test)]
 mod tests {
-    use super::{HigherArr2, HigherArr3, HigherRange, Product2};
+    use super::{HigherArr2, HigherArr3, HigherRange, Product2, Projection};
     use crate::mul::{op::Deduction, IndexedContainer, Opinion, Opinion1d, Simplex};
 
     fn higher_range_checker2(size: [usize; 2]) {
