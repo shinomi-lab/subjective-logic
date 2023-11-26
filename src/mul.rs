@@ -94,8 +94,11 @@ impl<T, U> Opinion<T, U> {
     }
 
     #[inline]
-    pub fn u(&self) -> &U {
-        &self.simplex.uncertainty
+    pub fn u(&self) -> U
+    where
+        U: Copy,
+    {
+        self.simplex.uncertainty
     }
 }
 
@@ -106,8 +109,24 @@ impl<T, U> OpinionRef<'_, T, U> {
     }
 
     #[inline]
-    pub fn u(&self) -> &U {
-        &self.simplex.uncertainty
+    pub fn u(&self) -> U
+    where
+        U: Copy,
+    {
+        self.simplex.uncertainty
+    }
+
+    #[inline]
+    pub fn into_opinion(&self) -> Opinion<T, U>
+    where
+        T: Clone,
+        U: Copy,
+    {
+        Opinion::new_unchecked(
+            (self.simplex.belief).clone(),
+            self.simplex.uncertainty,
+            (*self.base_rate).clone(),
+        )
     }
 }
 
@@ -125,6 +144,60 @@ impl<'a, T, U> From<&'a Opinion<T, U>> for OpinionRef<'a, T, U> {
         value.as_ref()
     }
 }
+
+macro_rules! impl_with_float {
+    ($ft: ty) => {
+        impl<T> SimplexBase<T, $ft> {
+            #[inline]
+            pub fn vacuous<Idx>() -> Self
+            where
+                T: IndexedContainer<Idx, Output = $ft>,
+            {
+                Self {
+                    belief: T::from_fn(|_| 0.0),
+                    uncertainty: 1.0,
+                }
+            }
+
+            #[inline]
+            pub fn is_vacuous(&self) -> bool {
+                ulps_eq!(self.uncertainty, 1.0)
+            }
+
+            #[inline]
+            pub fn is_dogmatic(&self) -> bool {
+                ulps_eq!(self.uncertainty, 0.0)
+            }
+        }
+
+        impl<T> Opinion<T, $ft> {
+            #[inline]
+            pub fn is_vacuous(&self) -> bool {
+                ulps_eq!(self.u(), 1.0)
+            }
+
+            #[inline]
+            pub fn is_dogmatic(&self) -> bool {
+                ulps_eq!(self.u(), 0.0)
+            }
+        }
+
+        impl<'a, T> OpinionRef<'a, T, $ft> {
+            #[inline]
+            pub fn is_vacuous(&self) -> bool {
+                ulps_eq!(self.u(), 1.0)
+            }
+
+            #[inline]
+            pub fn is_dogmatic(&self) -> bool {
+                ulps_eq!(self.u(), 0.0)
+            }
+        }
+    };
+}
+
+impl_with_float!(f32);
+impl_with_float!(f64);
 
 pub trait Projection<Idx, T> {
     /// Computes the probability projection of `self`.
@@ -181,9 +254,13 @@ macro_rules! impl_discount {
         {
             type Output = SimplexBase<T, $ft>;
             fn discount(&self, t: $ft) -> Self::Output {
-                SimplexBase {
-                    belief: T::from_fn(|i| self.b()[i] * t),
-                    uncertainty: 1.0 - t * (1.0 - self.u()),
+                if self.is_vacuous() {
+                    Self::Output::vacuous()
+                } else {
+                    SimplexBase {
+                        belief: T::from_fn(|i| self.b()[i] * t),
+                        uncertainty: 1.0 - t * (1.0 - self.u()),
+                    }
                 }
             }
         }
@@ -464,7 +541,7 @@ mod tests {
         let w2 = w.discount(0.5);
         assert!(ulps_eq!(w2.b()[0], 0.1));
         assert!(ulps_eq!(w2.b()[1], 0.1));
-        assert!(ulps_eq!(*w2.u(), 1.0 - 0.2));
+        assert!(ulps_eq!(w2.u(), 1.0 - 0.2));
         assert!(ulps_eq!(w2.b()[0] + w2.b()[1] + w2.u(), 1.0));
         assert_eq!(w2.base_rate, w.base_rate);
     }

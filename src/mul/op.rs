@@ -47,50 +47,65 @@ macro_rules! impl_fusion {
                 lhs: Opinion1dRef<'a, $ft, N>,
                 rhs: Opinion1dRef<'a, $ft, N>,
             ) -> Self::Output {
-                if ulps_eq!(*lhs.u(), 0.0) && ulps_eq!(*rhs.u(), 0.0) {
+                if lhs.is_dogmatic() && rhs.is_dogmatic() {
                     let gamma_a = 0.5;
                     let gamma_b = 1.0 - gamma_a;
                     let b = array::from_fn(|i| gamma_a * lhs.b()[i] + gamma_b * rhs.b()[i]);
-                    let u = 0.0;
                     let a = if std::ptr::eq(lhs.base_rate, rhs.base_rate) {
                         lhs.base_rate.clone()
                     } else {
                         array::from_fn(|i| gamma_a * lhs.base_rate[i] + gamma_b * rhs.base_rate[i])
                     };
-                    let w = Opinion1d::<$ft, N>::new_unchecked(b, u, a);
+                    let w = Opinion1d::<$ft, N>::new_unchecked(b, 0.0, a);
                     if matches!(self, FuseOp::ECm) {
                         return w.op_u_max();
                     } else {
                         return Ok(w);
                     }
                 }
-                let lhs_u = *lhs.u();
-                let rhs_u = *rhs.u();
+                let lhs_u = lhs.u();
+                let rhs_u = rhs.u();
                 match self {
                     FuseOp::ACm | FuseOp::ECm => {
-                        let temp = lhs_u + rhs_u - lhs_u * rhs_u;
-                        let b =
-                            array::from_fn(|i| (lhs.b()[i] * rhs_u + rhs.b()[i] * lhs_u) / temp);
-                        let u = lhs_u * rhs_u / temp;
-                        let a = if std::ptr::eq(lhs.base_rate, rhs.base_rate) {
-                            lhs.base_rate.clone()
-                        } else if ulps_eq!(lhs_u, 1.0) && ulps_eq!(rhs_u, 1.0) {
-                            array::from_fn(|i| (lhs.base_rate[i] + rhs.base_rate[i]) / 2.0)
-                        } else {
-                            let temp2 = temp - lhs_u * rhs_u;
-                            let lhs_sum_b = 1.0 - lhs_u;
-                            let rhs_sum_b = 1.0 - rhs_u;
-                            array::from_fn(|i| {
-                                if ulps_eq!(lhs.base_rate[i], rhs.base_rate[i]) {
-                                    lhs.base_rate[i]
-                                } else {
-                                    (lhs.base_rate[i] * rhs_u * lhs_sum_b
-                                        + rhs.base_rate[i] * lhs_u * rhs_sum_b)
-                                        / temp2
-                                }
+                        let w = if lhs.is_vacuous() && rhs.is_vacuous() {
+                            let s = Simplex::<$ft, N>::vacuous();
+                            let a = if std::ptr::eq(lhs.base_rate, rhs.base_rate) {
+                                lhs.base_rate.clone()
+                            } else {
+                                array::from_fn(|i| (lhs.base_rate[i] + rhs.base_rate[i]) / 2.0)
+                            };
+                            Ok(Opinion1d {
+                                simplex: s,
+                                base_rate: a,
                             })
+                        } else if lhs.is_vacuous() || rhs.is_dogmatic() {
+                            Ok(rhs.into_opinion())
+                        } else if rhs.is_vacuous() || lhs.is_dogmatic() {
+                            Ok(lhs.into_opinion())
+                        } else {
+                            let temp = lhs_u + rhs_u - lhs_u * rhs_u;
+                            let b = array::from_fn(|i| {
+                                (lhs.b()[i] * rhs_u + rhs.b()[i] * lhs_u) / temp
+                            });
+                            let u = lhs_u * rhs_u / temp;
+                            let a = if std::ptr::eq(lhs.base_rate, rhs.base_rate) {
+                                lhs.base_rate.clone()
+                            } else {
+                                let temp2 = temp - lhs_u * rhs_u;
+                                let lhs_sum_b = 1.0 - lhs_u;
+                                let rhs_sum_b = 1.0 - rhs_u;
+                                array::from_fn(|i| {
+                                    if ulps_eq!(lhs.base_rate[i], rhs.base_rate[i]) {
+                                        lhs.base_rate[i]
+                                    } else {
+                                        (lhs.base_rate[i] * rhs_u * lhs_sum_b
+                                            + rhs.base_rate[i] * lhs_u * rhs_sum_b)
+                                            / temp2
+                                    }
+                                })
+                            };
+                            Opinion1d::<$ft, N>::try_new(b, u, a)
                         };
-                        let w = Opinion1d::<$ft, N>::try_new(b, u, a);
                         if matches!(self, FuseOp::ECm) {
                             w?.op_u_max()
                         } else {
@@ -98,49 +113,66 @@ macro_rules! impl_fusion {
                         }
                     }
                     FuseOp::Avg => {
-                        let temp = lhs_u + rhs_u;
-                        let b =
-                            array::from_fn(|i| (lhs.b()[i] * rhs_u + rhs.b()[i] * lhs_u) / temp);
-                        let u = 2.0 * lhs_u * rhs_u / temp;
+                        let s = if lhs.is_dogmatic() {
+                            lhs.simplex.clone()
+                        } else if rhs.is_dogmatic() {
+                            rhs.simplex.clone()
+                        } else {
+                            let temp = lhs_u + rhs_u;
+                            let b = array::from_fn(|i| {
+                                (lhs.b()[i] * rhs_u + rhs.b()[i] * lhs_u) / temp
+                            });
+                            let u = 2.0 * lhs_u * rhs_u / temp;
+                            Simplex::<$ft, N>::try_new(b, u)?
+                        };
                         let a = if std::ptr::eq(lhs.base_rate, rhs.base_rate) {
                             lhs.base_rate.clone()
                         } else {
                             array::from_fn(|i| (lhs.base_rate[i] + rhs.base_rate[i]) / 2.0)
                         };
-                        Opinion1d::<$ft, N>::try_new(b, u, a)
+                        Ok(Opinion1d::<$ft, N>::from_simplex_unchecked(s, a))
                     }
                     FuseOp::Wgh => {
-                        let b;
-                        let u;
-                        let a;
-                        if ulps_eq!(lhs_u, 1.0) && ulps_eq!(rhs_u, 1.0) {
-                            b = [0.0; N];
-                            u = 1.0;
-                            a = if std::ptr::eq(lhs.base_rate, rhs.base_rate) {
+                        if lhs.is_vacuous() && rhs.is_vacuous() {
+                            let s = Simplex::<$ft, N>::vacuous();
+                            let a = if std::ptr::eq(lhs.base_rate, rhs.base_rate) {
                                 lhs.base_rate.clone()
                             } else {
                                 array::from_fn(|i| (lhs.base_rate[i] + rhs.base_rate[i]) / 2.0)
                             };
+                            Ok(Opinion1d::<$ft, N>::from_simplex_unchecked(s, a))
+                        } else if lhs.is_vacuous() {
+                            Ok(rhs.into_opinion())
+                        } else if rhs.is_vacuous() {
+                            Ok(lhs.into_opinion())
                         } else {
                             let lhs_sum_b = 1.0 - lhs_u;
                             let rhs_sum_b = 1.0 - rhs_u;
-                            let temp = lhs_u + rhs_u - 2.0 * lhs_u * rhs_u;
-                            let temp2 = lhs_sum_b + rhs_sum_b;
-                            b = array::from_fn(|i| {
-                                (lhs.b()[i] * lhs_sum_b * rhs_u + rhs.b()[i] * rhs_sum_b * lhs_u)
-                                    / temp
-                            });
-                            u = temp2 * lhs_u * rhs_u / temp;
-                            a = if std::ptr::eq(lhs.base_rate, rhs.base_rate) {
+                            let s = if lhs.is_dogmatic() {
+                                lhs.simplex.clone()
+                            } else if rhs.is_dogmatic() {
+                                rhs.simplex.clone()
+                            } else {
+                                let temp = lhs_u + rhs_u - 2.0 * lhs_u * rhs_u;
+                                let b = array::from_fn(|i| {
+                                    (lhs.b()[i] * lhs_sum_b * rhs_u
+                                        + rhs.b()[i] * rhs_sum_b * lhs_u)
+                                        / temp
+                                });
+                                let u = (lhs_sum_b + rhs_sum_b) * lhs_u * rhs_u / temp;
+                                Simplex::<$ft, N>::try_new(b, u)?
+                            };
+                            let a = if std::ptr::eq(lhs.base_rate, rhs.base_rate) {
                                 lhs.base_rate.clone()
                             } else {
+                                let temp2 = lhs_sum_b + rhs_sum_b;
                                 array::from_fn(|i| {
                                     (lhs.base_rate[i] * lhs_sum_b + rhs.base_rate[i] * rhs_sum_b)
                                         / temp2
                                 })
                             };
+                            Ok(Opinion1d::<$ft, N>::from_simplex_unchecked(s, a))
                         }
-                        Opinion1d::<$ft, N>::try_new(b, u, a)
                     }
                 }
             }
@@ -443,22 +475,22 @@ mod tests {
         // A-CBF
         let w = FuseOp::ACm.fuse(&w1, &w2).unwrap();
         assert_eq!(w.b().map(nround::<3>), [495.0, 10.0, 495.0]);
-        assert_eq!(nround::<3>(*w.u()), 0.0);
+        assert_eq!(nround::<3>(w.u()), 0.0);
         assert_eq!(w.base_rate.map(nround::<3>), [333.0, 333.0, 333.0]);
         // E-CBF
         let w = FuseOp::ECm.fuse(&w1, &w2).unwrap();
         assert_eq!(w.b().map(nround::<3>), [485.0, 0.0, 485.0]);
-        assert_eq!(nround::<3>(*w.u()), 30.0);
+        assert_eq!(nround::<3>(w.u()), 30.0);
         assert_eq!(w.base_rate.map(nround::<3>), [333.0, 333.0, 333.0]);
         // ABF
         let w = FuseOp::Avg.fuse(&w1, &w2).unwrap();
         assert_eq!(w.b().map(nround::<3>), [495.0, 10.0, 495.0]);
-        assert_eq!(nround::<3>(*w.u()), 0.0);
+        assert_eq!(nround::<3>(w.u()), 0.0);
         assert_eq!(w.base_rate.map(nround::<3>), [333.0, 333.0, 333.0]);
         // WBF
         let w = FuseOp::Wgh.fuse(&w1, &w2).unwrap();
         assert_eq!(w.b().map(nround::<3>), [495.0, 10.0, 495.0]);
-        assert_eq!(nround::<3>(*w.u()), 0.0);
+        assert_eq!(nround::<3>(w.u()), 0.0);
         assert_eq!(w.base_rate.map(nround::<3>), [333.0, 333.0, 333.0]);
     }
 
@@ -472,23 +504,23 @@ mod tests {
         // A-CBF
         let w = FuseOp::ACm.fuse(&w1, &w2).unwrap();
         assert_eq!(w.b().map(nround::<3>), [890.0, 10.0, 91.0]);
-        assert_eq!(nround::<3>(*w.u()), 9.0);
+        assert_eq!(nround::<3>(w.u()), 9.0);
         assert_eq!(w.base_rate.map(nround::<3>), [333.0, 333.0, 333.0]);
         // E-CBF
         let w = FuseOp::ECm.fuse(&w1, &w2).unwrap();
         assert_eq!(w.b().map(nround::<3>), [880.0, 0.0, 81.0]);
-        assert_eq!(nround::<3>(*w.u()), 39.0);
+        assert_eq!(nround::<3>(w.u()), 39.0);
         assert_eq!(w.base_rate.map(nround::<3>), [333.0, 333.0, 333.0]);
         // ABF
         let w = FuseOp::Avg.fuse(&w1, &w2).unwrap();
         assert_eq!(w.b().map(nround::<3>), [882.0, 10.0, 90.0]);
-        assert_eq!(nround::<3>(*w.u()), 18.0);
+        assert_eq!(nround::<3>(w.u()), 18.0);
         assert_eq!(w.base_rate.map(nround::<3>), [333.0, 333.0, 333.0]);
         // WBF
         let w = FuseOp::Wgh.fuse(&w1, &w2).unwrap();
         assert_eq!(w.b().map(nround::<3>), [889.0, 10.0, 83.0]);
         assert_eq!(
-            nround::<3>(*w.u()),
+            nround::<3>(w.u()),
             18.0 - w.b().map(nfract::<3>).iter().sum::<f32>().round()
         );
         assert_eq!(w.base_rate.map(nround::<3>), [333.0, 333.0, 333.0]);
@@ -524,6 +556,6 @@ mod tests {
         // belief
         assert_eq!(wy.b().map(nround::<3>), [63.0, 728.0, 100.0]);
         // uncertainty
-        assert_eq!(nround::<3>(*wy.u()), 109.0);
+        assert_eq!(nround::<3>(wy.u()), 109.0);
     }
 }

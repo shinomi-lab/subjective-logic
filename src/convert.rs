@@ -17,7 +17,7 @@ macro_rules! impl_convert {
                 BOpinion::<$ft>::new_unchecked(
                     value.b()[0],
                     value.b()[1],
-                    *value.u(),
+                    value.u(),
                     value.base_rate[0],
                 )
             }
@@ -28,7 +28,7 @@ macro_rules! impl_convert {
                 BOpinion::<$ft>::new_unchecked(
                     value.b()[0],
                     value.b()[1],
-                    *value.u(),
+                    value.u(),
                     value.base_rate[0],
                 )
             }
