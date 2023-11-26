@@ -1,11 +1,7 @@
 use approx::ulps_eq;
-use std::{array, ops::Index};
+use std::ops::Index;
 
-use super::{
-    IndexedContainer, Opinion, Opinion1d, Opinion1dRef, OpinionRef, Projection, Simplex,
-    SimplexBase, MBR,
-};
-use crate::errors::InvalidValueError;
+use super::{IndexedContainer, MaxUncertainty, Opinion, OpinionRef, Projection, SimplexBase, MBR};
 
 #[derive(Clone, Copy)]
 pub enum FuseOp {
@@ -19,202 +15,264 @@ pub enum FuseOp {
     Wgh,
 }
 
-pub trait FuseAssign<L, R> {
-    type Err;
-    fn fuse_assign(&self, lhs: &mut L, rhs: R) -> Result<(), Self::Err>;
+pub trait Fuse<L, R, Idx> {
+    type Output;
+    fn fuse(&self, lhs: L, rhs: R) -> Self::Output;
 }
 
-pub trait Fuse<T> {
+pub trait FuseAssign<L, R, Idx> {
+    fn fuse_assign(&self, lhs: &mut L, rhs: R);
+}
+
+trait InnerFuse<T, Idx, V>
+where
+    T: IndexedContainer<Idx, Output = V> + Clone,
+    Idx: Copy,
+{
     type Output;
-    fn fuse(&self, lhs: T, rhs: T) -> Self::Output;
+    fn compute_simlex(&self, lhs: &SimplexBase<T, V>, rhs: &SimplexBase<T, V>) -> Self::Output;
+    fn compute_base_rate(&self, lhs: OpinionRef<'_, T, V>, rhs: OpinionRef<'_, T, V>) -> T;
 }
 
 macro_rules! impl_fusion {
     ($ft: ty) => {
-        impl<const N: usize> Fuse<&Opinion1d<$ft, N>> for FuseOp {
-            type Output = Result<Opinion1d<$ft, N>, InvalidValueError>;
+        impl<T, Idx> InnerFuse<T, Idx, $ft> for FuseOp
+        where
+            T: IndexedContainer<Idx, Output = $ft> + Clone,
+            Idx: Copy,
+        {
+            type Output = SimplexBase<T, $ft>;
+            fn compute_simlex(
+                &self,
+                lhs: &SimplexBase<T, $ft>,
+                rhs: &SimplexBase<T, $ft>,
+            ) -> Self::Output {
+                if lhs.is_dogmatic() && rhs.is_dogmatic() {
+                    Self::Output::new_unchecked(
+                        T::from_fn(|i| (lhs.b()[i] + rhs.b()[i]) / 2.0),
+                        0.0,
+                    )
+                } else {
+                    match self {
+                        FuseOp::ACm | FuseOp::ECm if lhs.is_vacuous() && rhs.is_vacuous() => {
+                            Self::Output::vacuous()
+                        }
+                        FuseOp::ACm | FuseOp::ECm if lhs.is_vacuous() || rhs.is_dogmatic() => {
+                            rhs.clone()
+                        }
+                        FuseOp::ACm | FuseOp::ECm if rhs.is_vacuous() || lhs.is_dogmatic() => {
+                            lhs.clone()
+                        }
+                        FuseOp::ACm | FuseOp::ECm => {
+                            let lhs_u = lhs.u();
+                            let rhs_u = rhs.u();
+                            let temp = lhs_u + rhs_u - lhs_u * rhs_u;
+                            let b =
+                                T::from_fn(|i| (lhs.b()[i] * rhs_u + rhs.b()[i] * lhs_u) / temp);
+                            let u = lhs_u * rhs_u / temp;
+                            Self::Output::new_unchecked(b, u)
+                        }
+                        FuseOp::Avg if lhs.is_dogmatic() => lhs.clone(),
+                        FuseOp::Avg if rhs.is_dogmatic() => rhs.clone(),
+                        FuseOp::Avg => {
+                            let lhs_u = lhs.u();
+                            let rhs_u = rhs.u();
+                            let temp = lhs_u + rhs_u;
+                            let b =
+                                T::from_fn(|i| (lhs.b()[i] * rhs_u + rhs.b()[i] * lhs_u) / temp);
+                            let u = 2.0 * lhs_u * rhs_u / temp;
+                            Self::Output::new_unchecked(b, u)
+                        }
+                        FuseOp::Wgh if lhs.is_vacuous() && rhs.is_vacuous() => {
+                            Self::Output::vacuous()
+                        }
+                        FuseOp::Wgh if lhs.is_vacuous() || rhs.is_dogmatic() => rhs.clone(),
+                        FuseOp::Wgh if rhs.is_vacuous() || lhs.is_dogmatic() => lhs.clone(),
+                        FuseOp::Wgh => {
+                            let lhs_u = lhs.u();
+                            let rhs_u = rhs.u();
+                            let lhs_sum_b = 1.0 - lhs_u;
+                            let rhs_sum_b = 1.0 - rhs_u;
+                            let temp = lhs_u + rhs_u - 2.0 * lhs_u * rhs_u;
+                            let b = T::from_fn(|i| {
+                                (lhs.b()[i] * lhs_sum_b * rhs_u + rhs.b()[i] * rhs_sum_b * lhs_u)
+                                    / temp
+                            });
+                            let u = (lhs_sum_b + rhs_sum_b) * lhs_u * rhs_u / temp;
+                            Self::Output::new_unchecked(b, u)
+                        }
+                    }
+                }
+            }
 
-            fn fuse(&self, lhs: &Opinion1d<$ft, N>, rhs: &Opinion1d<$ft, N>) -> Self::Output {
+            fn compute_base_rate(
+                &self,
+                lhs: OpinionRef<'_, T, $ft>,
+                rhs: OpinionRef<'_, T, $ft>,
+            ) -> T {
+                if std::ptr::eq(lhs.base_rate, rhs.base_rate) {
+                    lhs.base_rate.clone()
+                } else if lhs.is_dogmatic() && rhs.is_dogmatic() {
+                    T::from_fn(|i| (lhs.base_rate[i] + rhs.base_rate[i]) / 2.0)
+                } else {
+                    match self {
+                        FuseOp::ACm | FuseOp::ECm if lhs.is_vacuous() && rhs.is_vacuous() => {
+                            T::from_fn(|i| {
+                                if ulps_eq!(lhs.base_rate[i], rhs.base_rate[i]) {
+                                    lhs.base_rate[i]
+                                } else {
+                                    (lhs.base_rate[i] + rhs.base_rate[i]) / 2.0
+                                }
+                            })
+                        }
+                        FuseOp::ACm | FuseOp::ECm if lhs.is_vacuous() || rhs.is_dogmatic() => {
+                            rhs.base_rate.clone()
+                        }
+                        FuseOp::ACm | FuseOp::ECm if rhs.is_vacuous() || lhs.is_dogmatic() => {
+                            lhs.base_rate.clone()
+                        }
+                        FuseOp::ACm | FuseOp::ECm => {
+                            let lhs_u = lhs.u();
+                            let rhs_u = rhs.u();
+                            let temp = lhs_u + rhs_u - lhs_u * rhs_u * 2.0;
+                            let lhs_sum_b = 1.0 - lhs_u;
+                            let rhs_sum_b = 1.0 - rhs_u;
+                            T::from_fn(|i| {
+                                if ulps_eq!(lhs.base_rate[i], rhs.base_rate[i]) {
+                                    lhs.base_rate[i]
+                                } else {
+                                    (lhs.base_rate[i] * rhs_u * lhs_sum_b
+                                        + rhs.base_rate[i] * lhs_u * rhs_sum_b)
+                                        / temp
+                                }
+                            })
+                        }
+                        FuseOp::Avg => T::from_fn(|i| {
+                            if ulps_eq!(lhs.base_rate[i], rhs.base_rate[i]) {
+                                lhs.base_rate[i]
+                            } else {
+                                (lhs.base_rate[i] + rhs.base_rate[i]) / 2.0
+                            }
+                        }),
+                        FuseOp::Wgh if lhs.is_vacuous() && rhs.is_vacuous() => T::from_fn(|i| {
+                            if ulps_eq!(lhs.base_rate[i], rhs.base_rate[i]) {
+                                lhs.base_rate[i]
+                            } else {
+                                (lhs.base_rate[i] + rhs.base_rate[i]) / 2.0
+                            }
+                        }),
+                        FuseOp::Wgh if lhs.is_vacuous() => rhs.base_rate.clone(),
+                        FuseOp::Wgh if rhs.is_vacuous() => lhs.base_rate.clone(),
+                        FuseOp::Wgh => {
+                            let lhs_u = lhs.u();
+                            let rhs_u = rhs.u();
+                            let lhs_sum_b = 1.0 - lhs_u;
+                            let rhs_sum_b = 1.0 - rhs_u;
+                            let temp = lhs_sum_b + rhs_sum_b;
+                            T::from_fn(|i| {
+                                if ulps_eq!(lhs.base_rate[i], rhs.base_rate[i]) {
+                                    lhs.base_rate[i]
+                                } else {
+                                    (lhs.base_rate[i] * lhs_sum_b + rhs.base_rate[i] * rhs_sum_b)
+                                        / temp
+                                }
+                            })
+                        }
+                    }
+                }
+            }
+        }
+
+        impl<'a, T, Idx> Fuse<OpinionRef<'a, T, $ft>, OpinionRef<'a, T, $ft>, Idx> for FuseOp
+        where
+            T: IndexedContainer<Idx, Output = $ft> + Clone,
+            Idx: Copy,
+        {
+            type Output = Opinion<T, $ft>;
+
+            fn fuse(
+                &self,
+                lhs: OpinionRef<'a, T, $ft>,
+                rhs: OpinionRef<'a, T, $ft>,
+            ) -> Self::Output {
+                let s = self.compute_simlex(lhs.simplex, rhs.simplex);
+                let a = self.compute_base_rate(lhs, rhs);
+                let w = Self::Output::from_simplex_unchecked(s, a);
+                if matches!(self, FuseOp::ECm) {
+                    w.uncertainty_maximized()
+                } else {
+                    w
+                }
+            }
+        }
+
+        impl<T, Idx> Fuse<&Opinion<T, $ft>, &SimplexBase<T, $ft>, Idx> for FuseOp
+        where
+            T: IndexedContainer<Idx, Output = $ft> + Clone,
+            Idx: Copy,
+        {
+            type Output = Opinion<T, $ft>;
+
+            fn fuse(&self, lhs: &Opinion<T, $ft>, rhs: &SimplexBase<T, $ft>) -> Self::Output {
+                self.fuse(lhs.as_ref(), rhs)
+            }
+        }
+
+        impl<T, Idx> Fuse<&Opinion<T, $ft>, &Opinion<T, $ft>, Idx> for FuseOp
+        where
+            T: IndexedContainer<Idx, Output = $ft> + Clone,
+            Idx: Copy,
+        {
+            type Output = Opinion<T, $ft>;
+
+            fn fuse(&self, lhs: &Opinion<T, $ft>, rhs: &Opinion<T, $ft>) -> Self::Output {
                 self.fuse(lhs.as_ref(), rhs.as_ref())
             }
         }
 
-        impl<'a, const N: usize> Fuse<Opinion1dRef<'a, $ft, N>> for FuseOp {
-            type Output = Result<Opinion1d<$ft, N>, InvalidValueError>;
+        impl<'a, T, Idx> Fuse<OpinionRef<'a, T, $ft>, &'a SimplexBase<T, $ft>, Idx> for FuseOp
+        where
+            T: IndexedContainer<Idx, Output = $ft> + Clone,
+            Idx: Copy,
+        {
+            type Output = Opinion<T, $ft>;
 
             fn fuse(
                 &self,
-                lhs: Opinion1dRef<'a, $ft, N>,
-                rhs: Opinion1dRef<'a, $ft, N>,
+                lhs: OpinionRef<'a, T, $ft>,
+                rhs: &'a SimplexBase<T, $ft>,
             ) -> Self::Output {
-                if lhs.is_dogmatic() && rhs.is_dogmatic() {
-                    let gamma_a = 0.5;
-                    let gamma_b = 1.0 - gamma_a;
-                    let b = array::from_fn(|i| gamma_a * lhs.b()[i] + gamma_b * rhs.b()[i]);
-                    let a = if std::ptr::eq(lhs.base_rate, rhs.base_rate) {
-                        lhs.base_rate.clone()
-                    } else {
-                        array::from_fn(|i| gamma_a * lhs.base_rate[i] + gamma_b * rhs.base_rate[i])
-                    };
-                    let w = Opinion1d::<$ft, N>::new_unchecked(b, 0.0, a);
-                    if matches!(self, FuseOp::ECm) {
-                        return w.op_u_max();
-                    } else {
-                        return Ok(w);
-                    }
-                }
-                let lhs_u = lhs.u();
-                let rhs_u = rhs.u();
-                match self {
-                    FuseOp::ACm | FuseOp::ECm => {
-                        let w = if lhs.is_vacuous() && rhs.is_vacuous() {
-                            let s = Simplex::<$ft, N>::vacuous();
-                            let a = if std::ptr::eq(lhs.base_rate, rhs.base_rate) {
-                                lhs.base_rate.clone()
-                            } else {
-                                array::from_fn(|i| (lhs.base_rate[i] + rhs.base_rate[i]) / 2.0)
-                            };
-                            Ok(Opinion1d {
-                                simplex: s,
-                                base_rate: a,
-                            })
-                        } else if lhs.is_vacuous() || rhs.is_dogmatic() {
-                            Ok(rhs.into_opinion())
-                        } else if rhs.is_vacuous() || lhs.is_dogmatic() {
-                            Ok(lhs.into_opinion())
-                        } else {
-                            let temp = lhs_u + rhs_u - lhs_u * rhs_u;
-                            let b = array::from_fn(|i| {
-                                (lhs.b()[i] * rhs_u + rhs.b()[i] * lhs_u) / temp
-                            });
-                            let u = lhs_u * rhs_u / temp;
-                            let a = if std::ptr::eq(lhs.base_rate, rhs.base_rate) {
-                                lhs.base_rate.clone()
-                            } else {
-                                let temp2 = temp - lhs_u * rhs_u;
-                                let lhs_sum_b = 1.0 - lhs_u;
-                                let rhs_sum_b = 1.0 - rhs_u;
-                                array::from_fn(|i| {
-                                    if ulps_eq!(lhs.base_rate[i], rhs.base_rate[i]) {
-                                        lhs.base_rate[i]
-                                    } else {
-                                        (lhs.base_rate[i] * rhs_u * lhs_sum_b
-                                            + rhs.base_rate[i] * lhs_u * rhs_sum_b)
-                                            / temp2
-                                    }
-                                })
-                            };
-                            Opinion1d::<$ft, N>::try_new(b, u, a)
-                        };
-                        if matches!(self, FuseOp::ECm) {
-                            w?.op_u_max()
-                        } else {
-                            w
-                        }
-                    }
-                    FuseOp::Avg => {
-                        let s = if lhs.is_dogmatic() {
-                            lhs.simplex.clone()
-                        } else if rhs.is_dogmatic() {
-                            rhs.simplex.clone()
-                        } else {
-                            let temp = lhs_u + rhs_u;
-                            let b = array::from_fn(|i| {
-                                (lhs.b()[i] * rhs_u + rhs.b()[i] * lhs_u) / temp
-                            });
-                            let u = 2.0 * lhs_u * rhs_u / temp;
-                            Simplex::<$ft, N>::try_new(b, u)?
-                        };
-                        let a = if std::ptr::eq(lhs.base_rate, rhs.base_rate) {
-                            lhs.base_rate.clone()
-                        } else {
-                            array::from_fn(|i| (lhs.base_rate[i] + rhs.base_rate[i]) / 2.0)
-                        };
-                        Ok(Opinion1d::<$ft, N>::from_simplex_unchecked(s, a))
-                    }
-                    FuseOp::Wgh => {
-                        if lhs.is_vacuous() && rhs.is_vacuous() {
-                            let s = Simplex::<$ft, N>::vacuous();
-                            let a = if std::ptr::eq(lhs.base_rate, rhs.base_rate) {
-                                lhs.base_rate.clone()
-                            } else {
-                                array::from_fn(|i| (lhs.base_rate[i] + rhs.base_rate[i]) / 2.0)
-                            };
-                            Ok(Opinion1d::<$ft, N>::from_simplex_unchecked(s, a))
-                        } else if lhs.is_vacuous() {
-                            Ok(rhs.into_opinion())
-                        } else if rhs.is_vacuous() {
-                            Ok(lhs.into_opinion())
-                        } else {
-                            let lhs_sum_b = 1.0 - lhs_u;
-                            let rhs_sum_b = 1.0 - rhs_u;
-                            let s = if lhs.is_dogmatic() {
-                                lhs.simplex.clone()
-                            } else if rhs.is_dogmatic() {
-                                rhs.simplex.clone()
-                            } else {
-                                let temp = lhs_u + rhs_u - 2.0 * lhs_u * rhs_u;
-                                let b = array::from_fn(|i| {
-                                    (lhs.b()[i] * lhs_sum_b * rhs_u
-                                        + rhs.b()[i] * rhs_sum_b * lhs_u)
-                                        / temp
-                                });
-                                let u = (lhs_sum_b + rhs_sum_b) * lhs_u * rhs_u / temp;
-                                Simplex::<$ft, N>::try_new(b, u)?
-                            };
-                            let a = if std::ptr::eq(lhs.base_rate, rhs.base_rate) {
-                                lhs.base_rate.clone()
-                            } else {
-                                let temp2 = lhs_sum_b + rhs_sum_b;
-                                array::from_fn(|i| {
-                                    (lhs.base_rate[i] * lhs_sum_b + rhs.base_rate[i] * rhs_sum_b)
-                                        / temp2
-                                })
-                            };
-                            Ok(Opinion1d::<$ft, N>::from_simplex_unchecked(s, a))
-                        }
-                    }
-                }
+                self.fuse(lhs.clone(), OpinionRef::from((rhs, lhs.base_rate)))
             }
         }
 
-        impl<'a, const N: usize> FuseAssign<Opinion1d<$ft, N>, &'a Simplex<$ft, N>> for FuseOp {
-            type Err = InvalidValueError;
-            fn fuse_assign(
-                &self,
-                lhs: &mut Opinion1d<$ft, N>,
-                rhs: &'a Simplex<$ft, N>,
-            ) -> Result<(), Self::Err> {
-                let w = self.fuse(lhs.as_ref(), Opinion1dRef::from((rhs, &lhs.base_rate)))?;
-                *lhs = w;
-                Ok(())
-            }
-        }
-
-        impl<'a, const N: usize> FuseAssign<Opinion1d<$ft, N>, &'a Opinion1d<$ft, N>> for FuseOp {
-            type Err = InvalidValueError;
-
-            fn fuse_assign(
-                &self,
-                lhs: &mut Opinion1d<$ft, N>,
-                rhs: &'a Opinion1d<$ft, N>,
-            ) -> Result<(), Self::Err> {
+        impl<T, Idx> FuseAssign<Opinion<T, $ft>, &Opinion<T, $ft>, Idx> for FuseOp
+        where
+            T: IndexedContainer<Idx, Output = $ft> + Clone,
+            Idx: Copy,
+        {
+            fn fuse_assign(&self, lhs: &mut Opinion<T, $ft>, rhs: &Opinion<T, $ft>) {
                 self.fuse_assign(lhs, rhs.as_ref())
             }
         }
 
-        impl<'a, const N: usize> FuseAssign<Opinion1d<$ft, N>, Opinion1dRef<'a, $ft, N>>
-            for FuseOp
+        impl<T, Idx> FuseAssign<Opinion<T, $ft>, &SimplexBase<T, $ft>, Idx> for FuseOp
+        where
+            T: IndexedContainer<Idx, Output = $ft> + Clone,
+            Idx: Copy,
         {
-            type Err = InvalidValueError;
+            fn fuse_assign(&self, lhs: &mut Opinion<T, $ft>, rhs: &SimplexBase<T, $ft>) {
+                *lhs = self.fuse(lhs.as_ref(), rhs);
+            }
+        }
 
-            fn fuse_assign(
-                &self,
-                lhs: &mut Opinion1d<$ft, N>,
-                rhs: Opinion1dRef<'a, $ft, N>,
-            ) -> Result<(), Self::Err> {
-                *lhs = self.fuse(lhs.as_ref(), rhs)?;
-                Ok(())
+        impl<'a, T, Idx> FuseAssign<Opinion<T, $ft>, OpinionRef<'a, T, $ft>, Idx> for FuseOp
+        where
+            T: IndexedContainer<Idx, Output = $ft> + Clone,
+            Idx: Copy,
+        {
+            fn fuse_assign(&self, lhs: &mut Opinion<T, $ft>, rhs: OpinionRef<'a, T, $ft>) {
+                *lhs = self.fuse(lhs.as_ref(), rhs);
             }
         }
     };
@@ -442,53 +500,28 @@ mod tests {
     }
 
     #[test]
-    fn test_fusion_ref() {
-        let w1 = Opinion1d::<f32, 2>::new([0.5, 0.0], 0.5, [0.25, 0.75]);
-        let a = [0.5, 0.5];
-        let s = Simplex::<f32, 2>::new([0.0, 0.9], 0.1);
-        let w2 = Opinion1d::<f32, 2>::from_simplex_unchecked(s.clone(), a.clone());
-        assert_eq!(
-            FuseOp::ACm.fuse(&w1, &w2).unwrap(),
-            FuseOp::ACm.fuse(w1.as_ref(), (&s, &a).into()).unwrap()
-        );
-        assert_eq!(
-            FuseOp::ECm.fuse(&w1, &w2).unwrap(),
-            FuseOp::ECm.fuse(w1.as_ref(), (&s, &a).into()).unwrap()
-        );
-        assert_eq!(
-            FuseOp::Avg.fuse(&w1, &w2).unwrap(),
-            FuseOp::Avg.fuse(w1.as_ref(), (&s, &a).into()).unwrap()
-        );
-        assert_eq!(
-            FuseOp::Wgh.fuse(&w1, &w2).unwrap(),
-            FuseOp::Wgh.fuse(w1.as_ref(), (&s, &a).into()).unwrap()
-        );
-    }
-
-    #[test]
     fn test_fusion_dogma() {
         let w1 =
             Opinion1d::<f32, 3>::new([0.99, 0.01, 0.0], 0.0, [1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0]);
-        let w2 =
-            Opinion1d::<f32, 3>::new([0.0, 0.01, 0.99], 0.0, [1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0]);
+        let w2 = Simplex::<f32, 3>::new([0.0, 0.01, 0.99], 0.0);
 
         // A-CBF
-        let w = FuseOp::ACm.fuse(&w1, &w2).unwrap();
+        let w = FuseOp::ACm.fuse(&w1, &w2);
         assert_eq!(w.b().map(nround::<3>), [495.0, 10.0, 495.0]);
         assert_eq!(nround::<3>(w.u()), 0.0);
         assert_eq!(w.base_rate.map(nround::<3>), [333.0, 333.0, 333.0]);
         // E-CBF
-        let w = FuseOp::ECm.fuse(&w1, &w2).unwrap();
+        let w = FuseOp::ECm.fuse(&w1, &w2);
         assert_eq!(w.b().map(nround::<3>), [485.0, 0.0, 485.0]);
         assert_eq!(nround::<3>(w.u()), 30.0);
         assert_eq!(w.base_rate.map(nround::<3>), [333.0, 333.0, 333.0]);
         // ABF
-        let w = FuseOp::Avg.fuse(&w1, &w2).unwrap();
+        let w = FuseOp::Avg.fuse(&w1, &w2);
         assert_eq!(w.b().map(nround::<3>), [495.0, 10.0, 495.0]);
         assert_eq!(nround::<3>(w.u()), 0.0);
         assert_eq!(w.base_rate.map(nround::<3>), [333.0, 333.0, 333.0]);
         // WBF
-        let w = FuseOp::Wgh.fuse(&w1, &w2).unwrap();
+        let w = FuseOp::Wgh.fuse(&w1, &w2);
         assert_eq!(w.b().map(nround::<3>), [495.0, 10.0, 495.0]);
         assert_eq!(nround::<3>(w.u()), 0.0);
         assert_eq!(w.base_rate.map(nround::<3>), [333.0, 333.0, 333.0]);
@@ -502,22 +535,22 @@ mod tests {
             Opinion1d::<f32, 3>::new([0.0, 0.01, 0.90], 0.09, [1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0]);
 
         // A-CBF
-        let w = FuseOp::ACm.fuse(&w1, &w2).unwrap();
+        let w = FuseOp::ACm.fuse(&w1, &w2);
         assert_eq!(w.b().map(nround::<3>), [890.0, 10.0, 91.0]);
         assert_eq!(nround::<3>(w.u()), 9.0);
         assert_eq!(w.base_rate.map(nround::<3>), [333.0, 333.0, 333.0]);
         // E-CBF
-        let w = FuseOp::ECm.fuse(&w1, &w2).unwrap();
+        let w = FuseOp::ECm.fuse(&w1, &w2);
         assert_eq!(w.b().map(nround::<3>), [880.0, 0.0, 81.0]);
         assert_eq!(nround::<3>(w.u()), 39.0);
         assert_eq!(w.base_rate.map(nround::<3>), [333.0, 333.0, 333.0]);
         // ABF
-        let w = FuseOp::Avg.fuse(&w1, &w2).unwrap();
+        let w = FuseOp::Avg.fuse(&w1, &w2);
         assert_eq!(w.b().map(nround::<3>), [882.0, 10.0, 90.0]);
         assert_eq!(nround::<3>(w.u()), 18.0);
         assert_eq!(w.base_rate.map(nround::<3>), [333.0, 333.0, 333.0]);
         // WBF
-        let w = FuseOp::Wgh.fuse(&w1, &w2).unwrap();
+        let w = FuseOp::Wgh.fuse(&w1, &w2);
         assert_eq!(w.b().map(nround::<3>), [889.0, 10.0, 83.0]);
         assert_eq!(
             nround::<3>(w.u()),
@@ -532,10 +565,8 @@ mod tests {
         let u = Simplex::<f32, 2>::new([0.125, 0.75], 0.125);
         let ops = [FuseOp::ACm, FuseOp::ECm, FuseOp::Avg, FuseOp::Wgh];
         for op in ops {
-            let w2 = op
-                .fuse(w.as_ref(), OpinionRef::from((&u, &w.base_rate)))
-                .unwrap();
-            op.fuse_assign(&mut w, &u).unwrap();
+            let w2 = op.fuse(w.as_ref(), OpinionRef::from((&u, &w.base_rate)));
+            op.fuse_assign(&mut w, &u);
             assert!(w == w2);
         }
     }

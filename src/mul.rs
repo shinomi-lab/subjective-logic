@@ -240,6 +240,62 @@ macro_rules! impl_projection {
 impl_projection!(f32);
 impl_projection!(f64);
 
+pub trait MaxUncertainty<Idx, V> {
+    type Output;
+
+    /// Returns the uncertainty maximized opinion of `self`.
+    fn max_uncertainty(&self) -> V;
+
+    /// Returns the uncertainty maximized opinion of `self`.
+    fn uncertainty_maximized(&self) -> Self::Output;
+}
+
+macro_rules! impl_max_uncertainty {
+    ($ft: ty) => {
+        impl<T, Idx> MaxUncertainty<Idx, $ft> for Opinion<T, $ft>
+        where
+            T: IndexedContainer<Idx, Output = $ft> + Clone,
+            Idx: Copy,
+        {
+            type Output = Opinion<T, $ft>;
+
+            fn max_uncertainty(&self) -> $ft {
+                self.as_ref().max_uncertainty()
+            }
+
+            fn uncertainty_maximized(&self) -> Self::Output {
+                self.as_ref().uncertainty_maximized()
+            }
+        }
+
+        impl<'a, T, Idx> MaxUncertainty<Idx, $ft> for OpinionRef<'a, T, $ft>
+        where
+            T: IndexedContainer<Idx, Output = $ft> + Clone,
+            Idx: Copy,
+        {
+            type Output = Opinion<T, $ft>;
+
+            fn max_uncertainty(&self) -> $ft {
+                let p = self.projection();
+                T::keys()
+                    .map(|i| p[i] / self.base_rate[i])
+                    .reduce(<$ft>::min)
+                    .unwrap()
+            }
+
+            fn uncertainty_maximized(&self) -> Self::Output {
+                let p = self.projection();
+                let u_max = self.max_uncertainty();
+                let b_max = T::from_fn(|i| p[i] - self.base_rate[i] * u_max);
+                Opinion::new_unchecked(b_max, u_max, self.base_rate.clone())
+            }
+        }
+    };
+}
+
+impl_max_uncertainty!(f32);
+impl_max_uncertainty!(f64);
+
 pub trait Discount<Idx, T, V> {
     type Output;
     /// Computes trust discounting of `self` with a referral trust `t`.
@@ -420,34 +476,6 @@ macro_rules! impl_opinion {
                     simplex: s,
                     base_rate: a,
                 })
-            }
-
-            /// Returns the uncertainty maximized opinion of `self`.
-            pub fn max_uncertainty(&self) -> $ft {
-                let p = self.projection();
-                (0..N)
-                    .map(|i| p[i] / self.base_rate[i])
-                    .reduce(<$ft>::min)
-                    .unwrap()
-            }
-
-            /// Returns the uncertainty maximized opinion of `self`.
-            pub fn op_u_max(&self) -> Result<Self, InvalidValueError> {
-                let p = self.projection();
-                let u_max = self.max_uncertainty();
-                let b_max = array::from_fn(|i| p[i] - self.base_rate[i] * u_max);
-                Self::try_new(b_max, u_max, self.base_rate.clone())
-            }
-        }
-
-        impl<'a, const N: usize> Opinion1dRef<'a, $ft, N> {
-            /// Returns the uncertainty maximized opinion of `self`.
-            pub fn max_uncertainty(&self) -> $ft {
-                let p = self.projection();
-                (0..N)
-                    .map(|i| p[i] / self.base_rate[i])
-                    .reduce(<$ft>::min)
-                    .unwrap()
             }
         }
     };
