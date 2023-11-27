@@ -219,7 +219,7 @@ pub struct HigherArr3<V, const K0: usize, const K1: usize, const K2: usize>(
 #[macro_export(local_inner_macros)]
 macro_rules! ha1 {
     [$($e:expr),*$(,)?] => {
-        crate::mul::prod::HA1([$($e,)*])
+        $crate::mul::prod::HA1([$($e,)*])
     };
     (ext; [$($e:expr),*$(,)?]) => {
         ha1!($($e,)*)
@@ -229,7 +229,7 @@ macro_rules! ha1 {
 #[macro_export(local_inner_macros)]
 macro_rules! ha2 {
     [$($e:tt),*$(,)?] => {
-        crate::mul::prod::HA2([$(ha1!(ext; $e),)*])
+        $crate::mul::prod::HA2([$(ha1!(ext; $e),)*])
     };
     (ext; [$($e:tt),*$(,)?]) => {
         ha2!($($e,)*)
@@ -239,21 +239,21 @@ macro_rules! ha2 {
 #[macro_export(local_inner_macros)]
 macro_rules! ha3 {
     [$($e:tt),*$(,)?] => {
-        crate::mul::prod::HA3([$(crate::ha2!(ext; $e),)*])
+        $crate::mul::prod::HA3([$(ha2!(ext; $e),)*])
     };
 }
 
-#[macro_export]
+#[macro_export(local_inner_macros)]
 macro_rules! harr2 {
     [$e:tt$(,$es:tt)*] => {
-        crate::mul::prod::HigherArr2(Box::new(crate::ha2!($e$(,$es)*)))
+        $crate::mul::prod::HigherArr2(Box::new(ha2!($e$(,$es)*)))
     };
 }
 
-#[macro_export]
+#[macro_export(local_inner_macros)]
 macro_rules! harr3 {
     [$e:tt$(,$es:tt)*] => {
-        crate::mul::prod::HigherArr3(Box::new(crate::ha3!($e$(,$es)*)))
+        $crate::mul::prod::HigherArr3(Box::new(ha3!($e$(,$es)*)))
     };
 }
 
