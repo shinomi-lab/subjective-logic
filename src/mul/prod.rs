@@ -89,13 +89,13 @@ where
 }
 
 #[derive(Debug)]
-pub struct HA1<V, const K0: usize>([V; K0]);
+pub struct HA1<V, const K0: usize>(pub [V; K0]);
 
 #[derive(Debug)]
-pub struct HA2<V, const K0: usize, const K1: usize>([HA1<V, K1>; K0]);
+pub struct HA2<V, const K0: usize, const K1: usize>(pub [HA1<V, K1>; K0]);
 
 #[derive(Debug)]
-pub struct HA3<V, const K0: usize, const K1: usize, const K2: usize>([HA2<V, K1, K2>; K0]);
+pub struct HA3<V, const K0: usize, const K1: usize, const K2: usize>(pub [HA2<V, K1, K2>; K0]);
 
 macro_rules! index {
     (1) => {
@@ -209,14 +209,14 @@ impl_into_iter!(2, HA2[K0, K1], HA1);
 impl_into_iter!(3, HA3[K0, K1, K2], HA2);
 
 #[derive(Debug)]
-pub struct HigherArr2<V, const K0: usize, const K1: usize>(Box<HA2<V, K0, K1>>);
+pub struct HigherArr2<V, const K0: usize, const K1: usize>(pub Box<HA2<V, K0, K1>>);
 
 #[derive(Debug)]
 pub struct HigherArr3<V, const K0: usize, const K1: usize, const K2: usize>(
-    Box<HA3<V, K0, K1, K2>>,
+    pub Box<HA3<V, K0, K1, K2>>,
 );
 
-#[allow(unused_macros)]
+#[macro_export(local_inner_macros)]
 macro_rules! ha1 {
     [$($e:expr),*$(,)?] => {
         crate::mul::prod::HA1([$($e,)*])
@@ -226,7 +226,7 @@ macro_rules! ha1 {
     };
 }
 
-#[allow(unused_macros)]
+#[macro_export(local_inner_macros)]
 macro_rules! ha2 {
     [$($e:tt),*$(,)?] => {
         crate::mul::prod::HA2([$(ha1!(ext; $e),)*])
@@ -236,24 +236,24 @@ macro_rules! ha2 {
     }
 }
 
-#[allow(unused_macros)]
+#[macro_export(local_inner_macros)]
 macro_rules! ha3 {
     [$($e:tt),*$(,)?] => {
-        crate::mul::prod::HA3([$(ha2!(ext; $e),)*])
+        crate::mul::prod::HA3([$(crate::ha2!(ext; $e),)*])
     };
 }
 
 #[macro_export]
 macro_rules! harr2 {
     [$e:tt$(,$es:tt)*] => {
-        crate::mul::prod::HigherArr2(Box::new(ha2!($e$(,$es)*)))
+        crate::mul::prod::HigherArr2(Box::new(crate::ha2!($e$(,$es)*)))
     };
 }
 
 #[macro_export]
 macro_rules! harr3 {
     [$e:tt$(,$es:tt)*] => {
-        crate::mul::prod::HigherArr3(Box::new(ha3!($e$(,$es)*)))
+        crate::mul::prod::HigherArr3(Box::new(crate::ha3!($e$(,$es)*)))
     };
 }
 

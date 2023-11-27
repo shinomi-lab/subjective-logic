@@ -16,6 +16,7 @@ mod tests {
         op::{Abduction, Deduction},
         Opinion1d, OpinionRef, Projection, Simplex,
     };
+    use crate::{harr2, harr3};
 
     #[test]
     fn test_bsl_boundary() {
@@ -249,5 +250,18 @@ mod tests {
         let mw_o = Simplex::<f32, 2>::new_unchecked([0.0, 0.0], 1.0);
         let (mw_x, _) = Abduction::abduce(&mw_o, &conds_ox, ax).unwrap();
         println!("{:?}", mw_x);
+    }
+
+    #[test]
+    fn test_macro_import() {
+        // let h = harr1![std::vec![0], std::vec![1], std::vec![1]];
+        let h2 = harr2![[std::vec![0], std::vec![1]], [std::vec![1], std::vec![1]]];
+        let h3 = harr3![
+            [[std::vec![0], std::vec![1]]],
+            [[std::vec![1], std::vec![1]]]
+        ];
+        // assert_eq!(h.len(), 3);
+        assert_eq!(h2.len(), 4);
+        assert_eq!(h3.len(), 4);
     }
 }
