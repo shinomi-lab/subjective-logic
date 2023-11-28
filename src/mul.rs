@@ -353,7 +353,7 @@ pub type Simplex<T, const N: usize> = SimplexBase<[T; N], T>;
 pub type Opinion1d<T, const N: usize> = Opinion<[T; N], T>;
 
 /// The reference type of a multinomial opinion with 1-dimensional vectors.
-type Opinion1dRef<'a, T, const N: usize> = OpinionRef<'a, [T; N], T>;
+pub type Opinion1dRef<'a, T, const N: usize> = OpinionRef<'a, [T; N], T>;
 
 macro_rules! impl_simplex {
     ($ft: ty) => {
