@@ -290,6 +290,16 @@ macro_rules! impl_fusion {
                 *lhs = self.fuse(lhs.as_ref(), rhs);
             }
         }
+
+        impl<T, Idx> FuseAssign<SimplexBase<T, $ft>, &SimplexBase<T, $ft>, Idx> for FuseOp
+        where
+            T: IndexedContainer<Idx, Output = $ft> + Clone,
+            Idx: Copy,
+        {
+            fn fuse_assign(&self, lhs: &mut SimplexBase<T, $ft>, rhs: &SimplexBase<T, $ft>) {
+                *lhs = self.fuse(&(*lhs), rhs);
+            }
+        }
     };
 }
 
@@ -581,6 +591,18 @@ mod tests {
         let ops = [FuseOp::ACm, FuseOp::ECm, FuseOp::Avg, FuseOp::Wgh];
         for op in ops {
             let w2 = op.fuse(w.as_ref(), OpinionRef::from((&u, &w.base_rate)));
+            op.fuse_assign(&mut w, &u);
+            assert!(w == w2);
+        }
+    }
+
+    #[test]
+    fn test_fusion_assign_simplex() {
+        let mut w = Simplex::<f32, 2>::new([0.5, 0.25], 0.25);
+        let u = Simplex::<f32, 2>::new([0.125, 0.75], 0.125);
+        let ops = [FuseOp::ACm, FuseOp::Avg, FuseOp::Wgh];
+        for op in ops {
+            let w2 = op.fuse(&w, &u);
             op.fuse_assign(&mut w, &u);
             assert!(w == w2);
         }
