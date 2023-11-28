@@ -246,6 +246,21 @@ macro_rules! impl_fusion {
             }
         }
 
+        impl<T, Idx> Fuse<&SimplexBase<T, $ft>, &SimplexBase<T, $ft>, Idx> for FuseOp
+        where
+            T: IndexedContainer<Idx, Output = $ft> + Clone,
+            Idx: Copy,
+        {
+            type Output = SimplexBase<T, $ft>;
+
+            fn fuse(&self, lhs: &SimplexBase<T, $ft>, rhs: &SimplexBase<T, $ft>) -> Self::Output {
+                if matches!(self, FuseOp::ECm) {
+                    panic!("Epistemic fusion cannot be used with simplexes because there is no base rate.");
+                }
+                self.compute_simlex(lhs, rhs)
+            }
+        }
+
         impl<T, Idx> FuseAssign<Opinion<T, $ft>, &Opinion<T, $ft>, Idx> for FuseOp
         where
             T: IndexedContainer<Idx, Output = $ft> + Clone,
@@ -256,22 +271,22 @@ macro_rules! impl_fusion {
             }
         }
 
-        impl<T, Idx> FuseAssign<Opinion<T, $ft>, &SimplexBase<T, $ft>, Idx> for FuseOp
-        where
-            T: IndexedContainer<Idx, Output = $ft> + Clone,
-            Idx: Copy,
-        {
-            fn fuse_assign(&self, lhs: &mut Opinion<T, $ft>, rhs: &SimplexBase<T, $ft>) {
-                *lhs = self.fuse(lhs.as_ref(), rhs);
-            }
-        }
-
         impl<'a, T, Idx> FuseAssign<Opinion<T, $ft>, OpinionRef<'a, T, $ft>, Idx> for FuseOp
         where
             T: IndexedContainer<Idx, Output = $ft> + Clone,
             Idx: Copy,
         {
             fn fuse_assign(&self, lhs: &mut Opinion<T, $ft>, rhs: OpinionRef<'a, T, $ft>) {
+                *lhs = self.fuse(lhs.as_ref(), rhs);
+            }
+        }
+
+        impl<T, Idx> FuseAssign<Opinion<T, $ft>, &SimplexBase<T, $ft>, Idx> for FuseOp
+        where
+            T: IndexedContainer<Idx, Output = $ft> + Clone,
+            Idx: Copy,
+        {
+            fn fuse_assign(&self, lhs: &mut Opinion<T, $ft>, rhs: &SimplexBase<T, $ft>) {
                 *lhs = self.fuse(lhs.as_ref(), rhs);
             }
         }
