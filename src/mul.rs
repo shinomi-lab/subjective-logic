@@ -5,7 +5,7 @@ use approx::{ulps_eq, ulps_ne};
 use std::{
     array,
     fmt::Display,
-    ops::{Index, Range},
+    ops::{Index, IndexMut, Range},
 };
 
 use crate::approx_ext::ApproxRange;
@@ -222,7 +222,16 @@ macro_rules! impl_projection {
             Idx: Copy,
         {
             fn projection(&self) -> T {
-                T::from_fn(|idx| self.b()[idx] + self.base_rate[idx] * self.u())
+                let mut s = 0.0;
+                let mut a = T::from_fn(|idx| {
+                    let p = self.b()[idx] + self.base_rate[idx] * self.u();
+                    s += p;
+                    p
+                });
+                for idx in T::keys() {
+                    a[idx] /= s;
+                }
+                a
             }
         }
 
@@ -484,13 +493,13 @@ macro_rules! impl_opinion {
 impl_opinion!(f32);
 impl_opinion!(f64);
 
-pub trait IndexedContainer<K>: Index<K> {
+pub trait IndexedContainer<K>: Index<K> + IndexMut<K> {
     const SIZE: usize;
     type Map<U>: Index<K, Output = U>;
     type Keys: Iterator<Item = K>;
     fn keys() -> Self::Keys;
-    fn map<U, F: Fn(K) -> U>(f: F) -> Self::Map<U>;
-    fn from_fn<F: Fn(K) -> <Self as Index<K>>::Output>(f: F) -> Self;
+    fn map<U, F: FnMut(K) -> U>(f: F) -> Self::Map<U>;
+    fn from_fn<F: FnMut(K) -> <Self as Index<K>>::Output>(f: F) -> Self;
 }
 
 impl<T, const N: usize> IndexedContainer<usize> for [T; N] {
@@ -502,11 +511,11 @@ impl<T, const N: usize> IndexedContainer<usize> for [T; N] {
         0..N
     }
 
-    fn map<U, F: Fn(usize) -> U>(f: F) -> [U; N] {
+    fn map<U, F: FnMut(usize) -> U>(mut f: F) -> [U; N] {
         array::from_fn(|i| f(i))
     }
 
-    fn from_fn<F: Fn(usize) -> T>(f: F) -> Self {
+    fn from_fn<F: FnMut(usize) -> T>(mut f: F) -> Self {
         array::from_fn(|i| f(i))
     }
 }
@@ -559,9 +568,11 @@ impl_mbr!(f64);
 
 #[cfg(test)]
 mod tests {
-    use approx::ulps_eq;
+    use std::array;
 
-    use super::{Discount, Opinion1d};
+    use approx::{assert_ulps_eq, ulps_eq};
+
+    use super::{Discount, Opinion1d, Projection};
 
     #[test]
     fn test_discount() {
@@ -572,5 +583,15 @@ mod tests {
         assert!(ulps_eq!(w2.u(), 1.0 - 0.2));
         assert!(ulps_eq!(w2.b()[0] + w2.b()[1] + w2.u(), 1.0));
         assert_eq!(w2.base_rate, w.base_rate);
+    }
+
+    #[test]
+    fn test_projection() {
+        let w = Opinion1d::<f32, 2>::new([0.2, 0.2], 0.6, [1.0 / 3.0, 2.0 / 3.0]);
+        let q: [f32; 2] = array::from_fn(|i| w.b()[i] + w.u() * w.base_rate[i]);
+        let p = w.projection();
+        println!("{:?}", p);
+        println!("{:?}", q);
+        assert_ulps_eq!(p[0] + p[1], 1.0);
     }
 }

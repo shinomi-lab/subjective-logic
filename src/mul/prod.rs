@@ -161,11 +161,11 @@ macro_rules! impl_ha {
                 HigherRange::new([$k$(, $ks)*])
             }
 
-            fn map<U, F: Fn([usize; $n]) -> U>(f: F) -> $ha<U, $k$(, $ks)*> {
+            fn map<U, F: FnMut([usize; $n]) -> U>(mut f: F) -> $ha<U, $k$(, $ks)*> {
                 from_fn!(f;$n)
             }
 
-            fn from_fn<F: Fn([usize; $n]) -> Self::Output>(f: F) -> Self {
+            fn from_fn<F: FnMut([usize; $n]) -> Self::Output>(mut f: F) -> Self {
                 from_fn!(f;$n)
             }
         }
@@ -289,11 +289,11 @@ macro_rules! impl_higher_arr {
                 HigherRange::new([$k$(, $ks)*])
             }
 
-            fn map<U, F: Fn([usize; $n]) -> U>(f: F) -> $higher_arr<U, $k$(, $ks)*> {
+            fn map<U, F: FnMut([usize; $n]) -> U>(mut f: F) -> $higher_arr<U, $k$(, $ks)*> {
                 $higher_arr(Box::new(from_fn!(f;$n)))
             }
 
-            fn from_fn<F: Fn([usize; $n]) -> Self::Output>(f: F) -> Self {
+            fn from_fn<F: FnMut([usize; $n]) -> Self::Output>(mut f: F) -> Self {
                 $higher_arr(Box::new(from_fn!(f;$n)))
             }
         }
@@ -387,6 +387,8 @@ impl_products!(f64);
 
 #[cfg(test)]
 mod tests {
+    use approx::assert_ulps_eq;
+
     use super::{HigherArr2, HigherArr3, HigherRange, Product2, Projection};
     use crate::mul::{op::Deduction, IndexedContainer, Opinion, Opinion1d, Simplex};
 
@@ -481,6 +483,7 @@ mod tests {
         let w1 = Opinion1d::<f32, 3>::new([0.1, 0.2, 0.3], 0.4, [0.5, 0.49, 0.01]);
         let w01 = Opinion::product2(w0.as_ref(), w1.as_ref());
         let p = w01.projection();
+        assert_ulps_eq!(p.into_iter().sum::<f32>(), 1.0);
         let p01 = HigherArr2::<_, 2, 3>::product2(&w0.projection(), &w1.projection());
         println!("{:?}", w01);
         println!("{:?}, {}", p, p.into_iter().sum::<f32>());
@@ -523,6 +526,10 @@ mod tests {
             [63.0, 728.0, 100.0]
         );
         // uncertainty
-        assert_eq!((wy.u() * 10f32.powi(3)).round(), 109.0)
+        assert_eq!((wy.u() * 10f32.powi(3)).round(), 109.0);
+
+        assert_ulps_eq!(wy.base_rate.into_iter().sum::<f32>(), 1.0);
+        assert_ulps_eq!(wy.b().into_iter().sum::<f32>() + wy.u(), 1.0);
+        assert_ulps_eq!(wy.projection().into_iter().sum::<f32>(), 1.0);
     }
 }
