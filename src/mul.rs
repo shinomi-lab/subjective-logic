@@ -11,7 +11,7 @@ use std::{
 use crate::approx_ext::ApproxRange;
 use crate::errors::InvalidValueError;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Default, Debug, Clone, PartialEq)]
 pub struct SimplexBase<T, V> {
     pub belief: T,
     pub uncertainty: V,
@@ -49,7 +49,7 @@ impl<T, V> From<(T, V)> for SimplexBase<T, V> {
 }
 
 /// The generlized structure of a multinomial opinion.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Default, Debug, Clone, PartialEq)]
 pub struct OpinionBase<S, T> {
     pub simplex: S,
     pub base_rate: T,
@@ -593,5 +593,21 @@ mod tests {
         println!("{:?}", p);
         println!("{:?}", q);
         assert_ulps_eq!(p[0] + p[1], 1.0);
+    }
+
+    #[test]
+    fn test_default() {
+        let mut w = Opinion1d::<f32, 2>::default();
+        assert_eq!(w.simplex.belief, [0.0; 2]);
+        assert_eq!(w.simplex.uncertainty, 0.0);
+        assert_eq!(w.base_rate, [0.0; 2]);
+        fn f(w: &mut Opinion1d<f32, 2>, b: &[f32; 2]) {
+            w.simplex.belief = *b;
+            w.base_rate = *b;
+        }
+        let b = [1.0, 0.0];
+        f(&mut w, &b);
+        assert_eq!(w.b(), &b);
+        assert_eq!(&w.base_rate, &b);
     }
 }
