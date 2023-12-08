@@ -4,6 +4,7 @@ use std::{
     usize,
 };
 
+#[derive(Clone)]
 pub struct HigherRange<const N: usize> {
     k: Option<[usize; N]>,
     size: [usize; N],
@@ -88,13 +89,13 @@ where
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct HA1<V, const K0: usize>(pub [V; K0]);
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct HA2<V, const K0: usize, const K1: usize>(pub [HA1<V, K1>; K0]);
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct HA3<V, const K0: usize, const K1: usize, const K2: usize>(pub [HA2<V, K1, K2>; K0]);
 
 macro_rules! index {
@@ -208,10 +209,10 @@ impl<'a, V, const K0: usize> IntoIterator for &'a HA1<V, K0> {
 impl_into_iter!(2, HA2[K0, K1], HA1);
 impl_into_iter!(3, HA3[K0, K1, K2], HA2);
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct HigherArr2<V, const K0: usize, const K1: usize>(pub Box<HA2<V, K0, K1>>);
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct HigherArr3<V, const K0: usize, const K1: usize, const K2: usize>(
     pub Box<HA3<V, K0, K1, K2>>,
 );
