@@ -180,6 +180,17 @@ macro_rules! impl_with_float {
             pub fn is_dogmatic(&self) -> bool {
                 ulps_eq!(self.u(), 0.0)
             }
+
+            #[inline]
+            pub fn vacuous_with<Idx>(base_rate: T) -> Self
+            where
+                T: IndexedContainer<Idx, Output = $ft>,
+            {
+                OpinionBase {
+                    simplex: SimplexBase::<T, $ft>::vacuous(),
+                    base_rate,
+                }
+            }
         }
 
         impl<'a, T> OpinionRef<'a, T, $ft> {
