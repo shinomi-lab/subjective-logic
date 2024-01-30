@@ -497,31 +497,29 @@ where
     U: IndexedContainer<Y, Output = V>,
     X: Copy,
     Y: Copy,
-    V: Float + Sum + UlpsEq,
+    V: Float + Sum + UlpsEq + AddAssign + DivAssign,
 {
     fn marginal_base_rate(ax: &T, conds: &'a Cond) -> Option<U> {
         let mut c = Cond::SIZE;
         for x in Cond::keys() {
-            if approx_ext::is_one(ax[x] * conds[x].into().uncertainty) {
+            if approx_ext::is_one(conds[x].into().uncertainty) {
                 c -= 1;
             }
         }
         if c == 0 {
             return None;
         }
-        let ay = U::from_fn(|y| {
-            let temp = Cond::keys()
-                .map(|x| ax[x] * conds[x].into().uncertainty)
-                .sum();
-            let temp2 = Cond::keys()
+        let mut sum_a = V::zero();
+        let mut ay = U::from_fn(|y| {
+            let a = Cond::keys()
                 .map(|x| ax[x] * conds[x].into().belief[y])
-                .sum();
-            if temp <= V::epsilon() {
-                temp2
-            } else {
-                temp2 / (V::one() - temp)
-            }
+                .sum::<V>();
+            sum_a += a;
+            a
         });
+        for y in U::keys() {
+            ay[y] /= sum_a;
+        }
         Some(ay)
     }
 }
@@ -533,7 +531,9 @@ mod tests {
     use approx::{assert_ulps_eq, ulps_eq};
     use num_traits::Float;
 
-    use super::{Discount, Opinion1d, Projection};
+    use crate::mul::check_base_rate;
+
+    use super::{Discount, Opinion1d, Projection, Simplex, MBR};
 
     #[test]
     fn test_discount() {
@@ -584,6 +584,28 @@ mod tests {
                 f(&mut w, &b);
                 assert_eq!(w.b(), &b);
                 assert_eq!(&w.base_rate, &b);
+            };
+        }
+        def!(f32);
+        def!(f64);
+    }
+
+    #[test]
+    fn test_mbr() {
+        macro_rules! def {
+            ($ft: ty) => {
+                let cond1 = [Simplex::new([0.0, 0.0], 1.0), Simplex::new([0.0, 0.0], 1.0)];
+                let cond2 = [
+                    Simplex::new([0.0, 0.01], 0.99),
+                    Simplex::new([0.0, 0.0], 1.0),
+                ];
+                let ax = [0.99, 0.01];
+
+                let ay1 = <[$ft; 2]>::marginal_base_rate(&ax, &cond1);
+                assert!(ay1.is_none());
+
+                let ay2 = <[$ft; 2]>::marginal_base_rate(&ax, &cond2).unwrap();
+                assert!(check_base_rate(&ay2).is_ok())
             };
         }
         def!(f32);
