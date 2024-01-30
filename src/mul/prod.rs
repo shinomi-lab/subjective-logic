@@ -1,6 +1,8 @@
+use num_traits::Float;
+
 use super::{IndexedContainer, Opinion, Opinion1d, Opinion1dRef, Projection};
 use std::{
-    ops::{Index, IndexMut},
+    ops::{AddAssign, DivAssign, Index, IndexMut},
     usize,
 };
 
@@ -155,10 +157,9 @@ macro_rules! impl_ha {
 
         impl<V, const $k: usize$(, const $ks: usize)*> IndexedContainer<[usize; $n]> for $ha<V, $k$(, $ks)*> {
             const SIZE: usize = $k$( * $ks)*;
-            type Keys = HigherRange<$n>;
             type Map<U> = $ha<U, $k$(, $ks)*>;
 
-            fn keys() -> Self::Keys {
+            fn keys() -> impl Iterator<Item = [usize; $n]> {
                 HigherRange::new([$k$(, $ks)*])
             }
 
@@ -283,10 +284,9 @@ macro_rules! impl_higher_arr {
 
         impl<V, const $k: usize$(, const $ks: usize)*> IndexedContainer<[usize; $n]> for $higher_arr<V, $k$(, $ks)*> {
             const SIZE: usize = $k$( * $ks)*;
-            type Keys = HigherRange<$n>;
             type Map<U> = $higher_arr<U, $k$(, $ks)*>;
 
-            fn keys() -> Self::Keys {
+            fn keys() -> impl Iterator<Item = [usize; $n]> {
                 HigherRange::new([$k$(, $ks)*])
             }
 
@@ -313,78 +313,67 @@ pub trait Product3<T0, T1, T2> {
     fn product3(t0: T0, t1: T1, t2: T2) -> Self;
 }
 
-macro_rules! impl_products {
-    ($ft:ty) => {
-        impl<const D0: usize, const D1: usize> Product2<&[$ft; D0], &[$ft; D1]>
-            for HigherArr2<$ft, D0, D1>
-        {
-            fn product2(w0: &[$ft; D0], w1: &[$ft; D1]) -> Self {
-                Self::from_fn(|d| w0[d[0]] * w1[d[1]])
-            }
-        }
-
-        impl<const D0: usize, const D1: usize, const D2: usize>
-            Product3<&[$ft; D0], &[$ft; D1], &[$ft; D2]> for HigherArr3<$ft, D0, D1, D2>
-        {
-            fn product3(w0: &[$ft; D0], w1: &[$ft; D1], w2: &[$ft; D2]) -> Self {
-                Self::from_fn(|d| w0[d[0]] * w1[d[1]] * w2[d[2]])
-            }
-        }
-
-        impl<'a, const D0: usize, const D1: usize>
-            Product2<&Opinion1d<$ft, D0>, &Opinion1d<$ft, D1>>
-            for Opinion<HigherArr2<$ft, D0, D1>, $ft>
-        {
-            fn product2(w0: &Opinion1d<$ft, D0>, w1: &Opinion1d<$ft, D1>) -> Self {
-                Product2::product2(w0.as_ref(), w1.as_ref())
-            }
-        }
-
-        impl<'a, const D0: usize, const D1: usize>
-            Product2<Opinion1dRef<'a, $ft, D0>, Opinion1dRef<'a, $ft, D1>>
-            for Opinion<HigherArr2<$ft, D0, D1>, $ft>
-        {
-            fn product2(w0: Opinion1dRef<$ft, D0>, w1: Opinion1dRef<$ft, D1>) -> Self {
-                let p = HigherArr2::product2(&w0.projection(), &w1.projection());
-                let a = HigherArr2::from_fn(|d| w0.base_rate[d[0]] * w1.base_rate[d[1]]);
-                let u = HigherArr2::<$ft, D0, D1>::keys()
-                    .map(|d| (p[d] - w0.b()[d[0]] * w1.b()[d[1]]) / a[d])
-                    .reduce(<$ft>::min)
-                    .unwrap();
-                let b = HigherArr2::from_fn(|d| p[d] - a[d] * u);
-                Opinion::new_unchecked(b, u, a)
-            }
-        }
-
-        impl<'a, const D0: usize, const D1: usize, const D2: usize>
-            Product3<
-                Opinion1dRef<'a, $ft, D0>,
-                Opinion1dRef<'a, $ft, D1>,
-                Opinion1dRef<'a, $ft, D2>,
-            > for Opinion<HigherArr3<$ft, D0, D1, D2>, $ft>
-        {
-            fn product3(
-                w0: Opinion1dRef<$ft, D0>,
-                w1: Opinion1dRef<$ft, D1>,
-                w2: Opinion1dRef<$ft, D2>,
-            ) -> Self {
-                let p = HigherArr3::product3(&w0.projection(), &w1.projection(), &w2.projection());
-                let a = HigherArr3::from_fn(|d| {
-                    w0.base_rate[d[0]] * w1.base_rate[d[1]] * w2.base_rate[d[2]]
-                });
-                let u = HigherArr3::<$ft, D0, D1, D2>::keys()
-                    .map(|d| (p[d] - w0.b()[d[0]] * w1.b()[d[1]] * w2.b()[d[2]]) / a[d])
-                    .reduce(<$ft>::min)
-                    .unwrap();
-                let b = HigherArr3::from_fn(|d| p[d] - a[d] * u);
-                Opinion::new_unchecked(b, u, a)
-            }
-        }
-    };
+impl<V: Float, const D0: usize, const D1: usize> Product2<&[V; D0], &[V; D1]>
+    for HigherArr2<V, D0, D1>
+{
+    fn product2(w0: &[V; D0], w1: &[V; D1]) -> Self {
+        Self::from_fn(|d| w0[d[0]] * w1[d[1]])
+    }
 }
 
-impl_products!(f32);
-impl_products!(f64);
+impl<V: Float, const D0: usize, const D1: usize, const D2: usize>
+    Product3<&[V; D0], &[V; D1], &[V; D2]> for HigherArr3<V, D0, D1, D2>
+{
+    fn product3(w0: &[V; D0], w1: &[V; D1], w2: &[V; D2]) -> Self {
+        Self::from_fn(|d| w0[d[0]] * w1[d[1]] * w2[d[2]])
+    }
+}
+
+impl<'a, V, const D0: usize, const D1: usize> Product2<&Opinion1d<V, D0>, &Opinion1d<V, D1>>
+    for Opinion<HigherArr2<V, D0, D1>, V>
+where
+    V: Float + AddAssign + DivAssign,
+{
+    fn product2(w0: &Opinion1d<V, D0>, w1: &Opinion1d<V, D1>) -> Self {
+        Product2::product2(w0.as_ref(), w1.as_ref())
+    }
+}
+
+impl<'a, V, const D0: usize, const D1: usize>
+    Product2<Opinion1dRef<'a, V, D0>, Opinion1dRef<'a, V, D1>> for Opinion<HigherArr2<V, D0, D1>, V>
+where
+    V: Float + AddAssign + DivAssign,
+{
+    fn product2(w0: Opinion1dRef<V, D0>, w1: Opinion1dRef<V, D1>) -> Self {
+        let p = HigherArr2::product2(&w0.projection(), &w1.projection());
+        let a = HigherArr2::from_fn(|d| w0.base_rate[d[0]] * w1.base_rate[d[1]]);
+        let u = HigherArr2::<V, D0, D1>::keys()
+            .map(|d| (p[d] - w0.b()[d[0]] * w1.b()[d[1]]) / a[d])
+            .reduce(<V>::min)
+            .unwrap();
+        let b = HigherArr2::from_fn(|d| p[d] - a[d] * u);
+        Opinion::new_unchecked(b, u, a)
+    }
+}
+
+impl<'a, V, const D0: usize, const D1: usize, const D2: usize>
+    Product3<Opinion1dRef<'a, V, D0>, Opinion1dRef<'a, V, D1>, Opinion1dRef<'a, V, D2>>
+    for Opinion<HigherArr3<V, D0, D1, D2>, V>
+where
+    V: Float + AddAssign + DivAssign,
+{
+    fn product3(w0: Opinion1dRef<V, D0>, w1: Opinion1dRef<V, D1>, w2: Opinion1dRef<V, D2>) -> Self {
+        let p = HigherArr3::product3(&w0.projection(), &w1.projection(), &w2.projection());
+        let a =
+            HigherArr3::from_fn(|d| w0.base_rate[d[0]] * w1.base_rate[d[1]] * w2.base_rate[d[2]]);
+        let u = HigherArr3::<V, D0, D1, D2>::keys()
+            .map(|d| (p[d] - w0.b()[d[0]] * w1.b()[d[1]] * w2.b()[d[2]]) / a[d])
+            .reduce(<V>::min)
+            .unwrap();
+        let b = HigherArr3::from_fn(|d| p[d] - a[d] * u);
+        Opinion::new_unchecked(b, u, a)
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -480,57 +469,66 @@ mod tests {
 
     #[test]
     fn test_prod2() {
-        let w0 = Opinion1d::<f32, 2>::new([0.1, 0.2], 0.7, [0.75, 0.25]);
-        let w1 = Opinion1d::<f32, 3>::new([0.1, 0.2, 0.3], 0.4, [0.5, 0.49, 0.01]);
-        let w01 = Opinion::product2(w0.as_ref(), w1.as_ref());
-        let p = w01.projection();
-        assert_ulps_eq!(p.into_iter().sum::<f32>(), 1.0);
-        let p01 = HigherArr2::<_, 2, 3>::product2(&w0.projection(), &w1.projection());
-        println!("{:?}", w01);
-        println!("{:?}, {}", p, p.into_iter().sum::<f32>());
-        println!("{:?}, {}", p01, p01.into_iter().sum::<f32>());
-        for d in HigherRange::new([2, 3]) {
-            println!("{}", (p[d] - w01.b()[d]) / w01.base_rate[d]);
+        macro_rules! def {
+            ($ft: ty) => {
+                let w0 = Opinion1d::<$ft, 2>::new([0.1, 0.2], 0.7, [0.75, 0.25]);
+                let w1 = Opinion1d::<$ft, 3>::new([0.1, 0.2, 0.3], 0.4, [0.5, 0.49, 0.01]);
+                let w01 = Opinion::product2(w0.as_ref(), w1.as_ref());
+                let p = w01.projection();
+                assert_ulps_eq!(p.into_iter().sum::<$ft>(), 1.0);
+                let p01 = HigherArr2::<_, 2, 3>::product2(&w0.projection(), &w1.projection());
+                println!("{:?}", w01);
+                println!("{:?}, {}", p, p.into_iter().sum::<$ft>());
+                println!("{:?}, {}", p01, p01.into_iter().sum::<$ft>());
+                for d in HigherRange::new([2, 3]) {
+                    println!("{}", (p[d] - w01.b()[d]) / w01.base_rate[d]);
+                }
+            };
         }
+        def!(f32);
+        def!(f64);
+    }
+
+    macro_rules! nround {
+        [$ft:ty, $n:expr] => {
+            |v: $ft| (v * <$ft>::powi(10.0, $n)).round()
+        };
     }
 
     #[test]
     fn test_deduction() {
-        let wx = Opinion1d::<f32, 2>::new([0.9, 0.0], 0.1, [0.1, 0.9]);
-        let wy = Opinion1d::<f32, 2>::new([0.5, 0.5], 0.0, [0.5, 0.5]);
-        let wxy = Opinion::product2(&wx, &wy);
-        let conds = harr2![
-            [
-                Simplex::<f32, 3>::new([0.0, 0.8, 0.1], 0.1),
-                Simplex::<f32, 3>::new([0.0, 0.8, 0.1], 0.1),
-            ],
-            [
-                Simplex::<f32, 3>::new([0.7, 0.0, 0.1], 0.2),
-                Simplex::<f32, 3>::new([0.7, 0.0, 0.1], 0.2),
-            ]
-        ];
-        let wy = wxy.as_ref().deduce(&conds).unwrap();
-        // base rate
-        assert_eq!(
-            wy.base_rate.map(|a| (a * 10f32.powi(3)).round()),
-            [778.0, 99.0, 123.0]
-        );
-        // projection
-        let p = wy.projection();
-        assert_eq!(
-            p.map(|p| (p * 10f32.powi(3)).round()),
-            [148.0, 739.0, 113.0]
-        );
-        // belief
-        assert_eq!(
-            wy.b().map(|p| (p * 10f32.powi(3)).round()),
-            [63.0, 728.0, 100.0]
-        );
-        // uncertainty
-        assert_eq!((wy.u() * 10f32.powi(3)).round(), 109.0);
+        macro_rules! def {
+            ($ft: ty) => {
+                let wx = Opinion1d::<$ft, 2>::new([0.9, 0.0], 0.1, [0.1, 0.9]);
+                let wy = Opinion1d::<$ft, 2>::new([0.5, 0.5], 0.0, [0.5, 0.5]);
+                let wxy = Opinion::product2(&wx, &wy);
+                let conds = harr2![
+                    [
+                        Simplex::<$ft, 3>::new([0.0, 0.8, 0.1], 0.1),
+                        Simplex::<$ft, 3>::new([0.0, 0.8, 0.1], 0.1),
+                    ],
+                    [
+                        Simplex::<$ft, 3>::new([0.7, 0.0, 0.1], 0.2),
+                        Simplex::<$ft, 3>::new([0.7, 0.0, 0.1], 0.2),
+                    ]
+                ];
+                let wy = wxy.as_ref().deduce(&conds).unwrap();
+                // base rate
+                assert_eq!(wy.base_rate.map(nround![$ft, 3]), [778.0, 99.0, 123.0]);
+                // projection
+                let p = wy.projection();
+                assert_eq!(p.map(nround![$ft, 3]), [148.0, 739.0, 113.0]);
+                // belief
+                assert_eq!(wy.b().map(nround![$ft, 3]), [63.0, 728.0, 100.0]);
+                // uncertainty
+                assert_eq!(nround![$ft, 3](wy.u()), 109.0);
 
-        assert_ulps_eq!(wy.base_rate.into_iter().sum::<f32>(), 1.0);
-        assert_ulps_eq!(wy.b().into_iter().sum::<f32>() + wy.u(), 1.0);
-        assert_ulps_eq!(wy.projection().into_iter().sum::<f32>(), 1.0);
+                assert_ulps_eq!(wy.base_rate.into_iter().sum::<$ft>(), 1.0);
+                assert_ulps_eq!(wy.b().into_iter().sum::<$ft>() + wy.u(), 1.0);
+                assert_ulps_eq!(wy.projection().into_iter().sum::<$ft>(), 1.0);
+            };
+        }
+        def!(f32);
+        def!(f64);
     }
 }

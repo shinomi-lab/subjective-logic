@@ -1,8 +1,8 @@
-use approx::{ulps_eq, ulps_ne, AbsDiffEq, RelativeEq, UlpsEq};
+use approx::{ulps_eq, AbsDiffEq, RelativeEq, UlpsEq};
+use num_traits::Float;
 use std::fmt::Display;
 
-use crate::approx_ext::ApproxRange;
-use crate::errors::InvalidValueError;
+use crate::errors::{check_is_one, check_unit_interval, InvalidValueError};
 use crate::mul::Simplex;
 
 /// The simplex of a binomial opinion, from which a base rate is excluded.
@@ -33,6 +33,26 @@ impl<T: Display> Display for BSimplex<T> {
     }
 }
 
+#[inline]
+fn check_simplex<V>(b: V, d: V, u: V) -> Result<(), InvalidValueError>
+where
+    V: UlpsEq + Float,
+{
+    check_is_one(b + d + u, "b + d + u")?;
+    check_unit_interval(b, "b")?;
+    check_unit_interval(d, "d")?;
+    check_unit_interval(u, "u")?;
+    Ok(())
+}
+
+#[inline]
+fn check_base_rate<V>(a: V) -> Result<(), InvalidValueError>
+where
+    V: UlpsEq + Float,
+{
+    check_unit_interval(a, "a")
+}
+
 macro_rules! impl_simplex {
     ($ft: ty) => {
         impl BSimplex<$ft> {
@@ -48,20 +68,7 @@ macro_rules! impl_simplex {
             /// # Errors
             /// If even pameter does not satisfy the conditions, an error is returned.
             pub fn try_new(b: $ft, d: $ft, u: $ft) -> Result<Self, InvalidValueError> {
-                if ulps_ne!(b + d + u, 1.0) {
-                    return Err(InvalidValueError(
-                        "b + d + u = 1 is not satisfied".to_string(),
-                    ));
-                }
-                if b.out_of_range(0.0, 1.0) {
-                    return Err(InvalidValueError("b ∈ [0,1] is not satisfied".to_string()));
-                }
-                if d.out_of_range(0.0, 1.0) {
-                    return Err(InvalidValueError("d ∈ [0,1] is not satisfied".to_string()));
-                }
-                if u.out_of_range(0.0, 1.0) {
-                    return Err(InvalidValueError("u ∈ [0,1] is not satisfied".to_string()));
-                }
+                check_simplex(b, d, u)?;
                 Ok(Self(Simplex::new_unchecked([b, d], u)))
             }
 
@@ -132,9 +139,7 @@ macro_rules! impl_bop {
             /// # Errors
             /// If even pameter does not satisfy the conditions, an error is returned.
             pub fn try_new(b: $ft, d: $ft, u: $ft, a: $ft) -> Result<Self, InvalidValueError> {
-                if a.out_of_range(0.0, 1.0) {
-                    return Err(InvalidValueError("a ∈ [0,1] is not satisfied".to_string()));
-                }
+                check_base_rate(a)?;
                 Ok(Self {
                     simplex: BSimplex::<$ft>::try_new(b, d, u)?,
                     base_rate: a,
@@ -338,7 +343,7 @@ macro_rules! impl_bop {
 
             /// Computes the u() favouring discounted opinion.
             pub fn trans_unc(&self, b: $ft) -> Self {
-                assert!(b.is_in_range(0.0, 1.0), "b ∈ [0,1] is not satisfied.");
+                check_unit_interval(b, "b").unwrap();
                 Self::new(
                     b * self.b(),
                     b * self.d(),
@@ -350,7 +355,7 @@ macro_rules! impl_bop {
             /// Computes the opposite b() favouring discounted opinion.
             pub fn trans_opp(&self, b: $ft, d: $ft) -> Self {
                 let u = 1.0 - b - d;
-                assert!(u.is_in_range(0.0, 1.0), "b + d ∈ [0,1] is not satisfied.");
+                check_unit_interval(u, "u").unwrap();
                 Self::new(
                     b * self.b() + d * self.d(),
                     b * self.d() + d * self.b(),
@@ -361,7 +366,7 @@ macro_rules! impl_bop {
 
             /// Computes base rate sensitive discounted opinion.
             pub fn trans_bsr(&self, ev: $ft) -> Self {
-                assert!(ev.is_in_range(0.0, 1.0), "ev ∈ [0,1] is not satisfied.");
+                check_unit_interval(ev, "ev").unwrap();
                 Self::new(
                     ev * self.b(),
                     ev * self.d(),

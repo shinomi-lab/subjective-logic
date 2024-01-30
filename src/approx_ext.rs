@@ -1,26 +1,22 @@
-use approx::ulps_eq;
+use approx::{ulps_eq, UlpsEq};
+use num_traits::Float;
 
-pub trait ApproxRange<T = Self>: Sized {
-    fn is_in_range(self, from: T, to: T) -> bool;
-    fn out_of_range(self, from: T, to: T) -> bool {
-        !self.is_in_range(from, to)
-    }
+#[inline]
+pub fn is_in_range<V: UlpsEq + PartialOrd>(v: V, from: V, to: V) -> bool {
+    (v >= from && v <= to) || ulps_eq!(v, from) || ulps_eq!(v, to)
 }
 
-macro_rules! impl_approx {
-    ($ft: ty) => {
-        impl ApproxRange for $ft {
-            fn is_in_range(self, from: Self, to: Self) -> bool {
-                (self >= from && self <= to) || ulps_eq!(self, from) || ulps_eq!(self, to)
-            }
-        }
-        impl ApproxRange for &$ft {
-            fn is_in_range(self, from: Self, to: Self) -> bool {
-                (self >= from && self <= to) || ulps_eq!(self, from) || ulps_eq!(self, to)
-            }
-        }
-    };
+#[inline]
+pub fn out_of_range<V: UlpsEq + PartialOrd>(v: V, from: V, to: V) -> bool {
+    !is_in_range(v, from, to)
 }
 
-impl_approx!(f32);
-impl_approx!(f64);
+#[inline]
+pub fn in_unit_interval<V: Float + UlpsEq>(v: V) -> bool {
+    is_in_range(v, V::zero(), V::one())
+}
+
+#[inline]
+pub fn is_one<V: Float + UlpsEq>(v: V) -> bool {
+    ulps_eq!(v, V::one())
+}

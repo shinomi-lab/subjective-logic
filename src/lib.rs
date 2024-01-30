@@ -86,11 +86,17 @@ mod tests {
 
     #[test]
     fn test_cum_fusion_bo() {
-        let w0 = BOpinion::<f32>::new(0.5, 0.0, 0.5, 0.5);
-        let w1 = BOpinion::<f32>::new(0.0, 0.0, 1.0, 0.5);
-        let w2 = BOpinion::<f32>::new(0.0, 0.0, 1.0, 0.5);
-        assert!(w0.cfuse(&w2).is_ok());
-        assert!(w1.cfuse(&w2).is_ok());
+        macro_rules! def {
+            ($ft: ty) => {
+                let w0 = BOpinion::<$ft>::new(0.5, 0.0, 0.5, 0.5);
+                let w1 = BOpinion::<$ft>::new(0.0, 0.0, 1.0, 0.5);
+                let w2 = BOpinion::<$ft>::new(0.0, 0.0, 1.0, 0.5);
+                assert!(w0.cfuse(&w2).is_ok());
+                assert!(w1.cfuse(&w2).is_ok());
+            };
+        }
+        def!(f32);
+        def!(f64);
     }
 
     #[test]
