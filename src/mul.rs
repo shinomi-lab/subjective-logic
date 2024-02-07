@@ -44,12 +44,6 @@ impl<T, V> SimplexBase<T, V> {
     }
 }
 
-impl<T, V> From<(T, V)> for SimplexBase<T, V> {
-    fn from(value: (T, V)) -> Self {
-        SimplexBase::new_unchecked(value.0, value.1)
-    }
-}
-
 /// The generlized structure of a multinomial opinion.
 #[derive(Default, Debug, Clone, PartialEq)]
 pub struct OpinionBase<S, T> {
@@ -417,6 +411,17 @@ where
     /// Panics if even pameter does not satisfy the conditions.
     pub fn new(b: [V; N], u: V) -> Self {
         Self::try_new(b, u).unwrap()
+    }
+}
+
+impl<V, const N: usize> TryFrom<([V; N], V)> for Simplex<V, N>
+where
+    V: Float + AddAssign + UlpsEq,
+{
+    type Error = InvalidValueError;
+
+    fn try_from(value: ([V; N], V)) -> Result<Self, Self::Error> {
+        Self::try_new(value.0, value.1)
     }
 }
 
