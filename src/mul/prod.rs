@@ -91,21 +91,32 @@ where
     }
 }
 
+/// `Vec` is expected to have length `K0`.
 #[derive(Clone, Debug, PartialEq)]
-pub struct HA1<V, const K0: usize>(pub [V; K0]);
+pub struct HA1<V, const K0: usize>(Vec<V>);
 
-#[derive(Clone, Debug, PartialEq)]
-pub struct HA2<V, const K0: usize, const K1: usize>(pub [HA1<V, K1>; K0]);
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct HA3<V, const K0: usize, const K1: usize, const K2: usize>(pub [HA2<V, K1, K2>; K0]);
+impl<V, const K0: usize> HA1<V, K0> {
+    pub fn new(arr: [V; K0]) -> Self {
+        HA1(Vec::from(arr))
+    }
+}
 
 impl<V, const K0: usize> Default for HA1<V, K0>
 where
     [V; K0]: Default,
 {
     fn default() -> Self {
-        Self(Default::default())
+        Self::new(Default::default())
+    }
+}
+
+/// `Vec` is expected to have length `K1`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct HA2<V, const K0: usize, const K1: usize>(pub(crate) Vec<HA1<V, K1>>);
+
+impl<V, const K0: usize, const K1: usize> HA2<V, K0, K1> {
+    pub fn new(arr: [HA1<V, K1>; K0]) -> Self {
+        HA2(Vec::from(arr))
     }
 }
 
@@ -114,7 +125,19 @@ where
     [HA1<V, K1>; K0]: Default,
 {
     fn default() -> Self {
-        Self(Default::default())
+        Self::new(Default::default())
+    }
+}
+
+/// `Vec` is expected to have length `K2`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct HA3<V, const K0: usize, const K1: usize, const K2: usize>(
+    pub(crate) Vec<HA2<V, K1, K2>>,
+);
+
+impl<V, const K0: usize, const K1: usize, const K2: usize> HA3<V, K0, K1, K2> {
+    pub fn new(arr: [HA2<V, K1, K2>; K0]) -> Self {
+        HA3(Vec::from(arr))
     }
 }
 
@@ -123,7 +146,7 @@ where
     [HA2<V, K1, K2>; K0]: Default,
 {
     fn default() -> Self {
-        Self(Default::default())
+        Self::new(Default::default())
     }
 }
 
@@ -154,20 +177,20 @@ macro_rules! index_mut {
 }
 
 macro_rules! from_fn {
-    ($f:ident;1) => {
-        HA1(std::array::from_fn(|k0| $f([k0])))
+    ($f:ident; $k0:ident) => {
+        HA1(Vec::from(<[_; $k0]>::from_fn(|k0| $f([k0]))))
     };
-    ($f:ident;2) => {
-        HA2(std::array::from_fn(|k0| {
-            HA1(std::array::from_fn(|k1| $f([k0, k1])))
-        }))
+    ($f:ident; $k0:ident, $k1:ident) => {
+        HA2(Vec::from(<[_; $k0]>::from_fn(|k0| {
+            HA1(Vec::from(<[_; $k1]>::from_fn(|k1| $f([k0, k1]))))
+        })))
     };
-    ($f:ident;3) => {
-        HA3(std::array::from_fn(|k0| {
-            HA2(std::array::from_fn(|k1| {
-                HA1(std::array::from_fn(|k2| $f([k0, k1, k2])))
-            }))
-        }))
+    ($f:ident; $k0:ident, $k1:ident, $k2: ident) => {
+        HA3(Vec::from(<[_; $k0]>::from_fn(|k0| {
+            HA2(Vec::from(<[_; $k1]>::from_fn(|k1| {
+                HA1(Vec::from(<[_; $k2]>::from_fn(|k2| $f([k0, k1, k2]))))
+            })))
+        })))
     };
 }
 
@@ -191,11 +214,11 @@ macro_rules! impl_ha {
             }
 
             fn map<U, F: FnMut([usize; $n]) -> U>(mut f: F) -> $ha<U, $k$(, $ks)*> {
-                from_fn!(f;$n)
+                from_fn!(f; $k$(,$ks)*)
             }
 
             fn from_fn<F: FnMut([usize; $n]) -> Self::Output>(mut f: F) -> Self {
-                from_fn!(f;$n)
+                from_fn!(f; $k$(,$ks)*)
             }
         }
 
@@ -218,7 +241,7 @@ macro_rules! impl_into_iter {
             type IntoIter = MyIter<'a, $ha0<V$(, $ks)+>>;
 
             fn into_iter(self) -> Self::IntoIter {
-                let iters = self.0.as_ref().iter();
+                let iters = self.0.iter();
                 MyIter::new(iters)
             }
         }
@@ -230,7 +253,7 @@ impl<'a, V, const K0: usize> IntoIterator for &'a HA1<V, K0> {
     type IntoIter = std::slice::Iter<'a, V>;
 
     fn into_iter(self) -> Self::IntoIter {
-        self.0.as_ref().iter()
+        self.0.iter()
     }
 }
 
@@ -266,7 +289,7 @@ where
 #[macro_export(local_inner_macros)]
 macro_rules! ha1 {
     [$($e:expr),*$(,)?] => {
-        $crate::mul::prod::HA1([$($e,)*])
+        $crate::mul::prod::HA1::new([$($e,)*])
     };
     (ext; [$($e:expr),*$(,)?]) => {
         ha1!($($e,)*)
@@ -276,7 +299,7 @@ macro_rules! ha1 {
 #[macro_export(local_inner_macros)]
 macro_rules! ha2 {
     [$($e:tt),*$(,)?] => {
-        $crate::mul::prod::HA2([$(ha1!(ext; $e),)*])
+        $crate::mul::prod::HA2::new([$(ha1!(ext; $e),)*])
     };
     (ext; [$($e:tt),*$(,)?]) => {
         ha2!($($e,)*)
@@ -286,7 +309,7 @@ macro_rules! ha2 {
 #[macro_export(local_inner_macros)]
 macro_rules! ha3 {
     [$($e:tt),*$(,)?] => {
-        $crate::mul::prod::HA3([$(ha2!(ext; $e),)*])
+        $crate::mul::prod::HA3::new([$(ha2!(ext; $e),)*])
     };
 }
 
@@ -306,7 +329,7 @@ macro_rules! harr3 {
 
 macro_rules! impl_higher_arr {
     ($n:tt, $ha:ident, $higher_arr:ident [$k:ident$(, $ks:ident)*]) => {
-        impl<V, const $k: usize$(, const $ks: usize)*> std::ops::Deref for $higher_arr<V, $k$(, $ks)+> {
+        impl<V, const $k: usize$(, const $ks: usize)*> std::ops::Deref for $higher_arr<V, $k$(, $ks)*> {
             type Target = $ha<V, $k$(, $ks)*>;
 
             fn deref(&self) -> &Self::Target {
@@ -336,11 +359,11 @@ macro_rules! impl_higher_arr {
             }
 
             fn map<U, F: FnMut([usize; $n]) -> U>(mut f: F) -> $higher_arr<U, $k$(, $ks)*> {
-                $higher_arr(Box::new(from_fn!(f;$n)))
+                $higher_arr(Box::new(from_fn!(f; $k$(,$ks)*)))
             }
 
             fn from_fn<F: FnMut([usize; $n]) -> Self::Output>(mut f: F) -> Self {
-                $higher_arr(Box::new(from_fn!(f;$n)))
+                $higher_arr(Box::new(from_fn!(f; $k$(,$ks)*)))
             }
         }
     };
@@ -350,54 +373,76 @@ macro_rules! impl_higher_arr {
 impl_higher_arr!(2, HA2, HigherArr2[K0, K1]);
 impl_higher_arr!(3, HA3, HigherArr3[K0, K1, K2]);
 
-impl<T, U, const K0: usize> From<[T; K0]> for HA1<U, K0>
+impl<T, U, const K0: usize> TryFrom<[T; K0]> for HA1<U, K0>
 where
-    U: From<T>,
+    U: TryFrom<T>,
 {
+    type Error = U::Error;
+
     #[inline]
-    fn from(value: [T; K0]) -> Self {
-        HA1(value.map(U::from))
+    fn try_from(value: [T; K0]) -> Result<Self, Self::Error> {
+        Ok(HA1(value
+            .into_iter()
+            .map(U::try_from)
+            .collect::<Result<_, _>>()?))
     }
 }
 
-impl<T, U, const K0: usize, const K1: usize> From<[[T; K1]; K0]> for HA2<U, K0, K1>
+impl<T, U, const K0: usize, const K1: usize> TryFrom<[[T; K1]; K0]> for HA2<U, K0, K1>
 where
-    U: From<T>,
+    // U: TryFrom<T>,
+    HA1<U, K1>: TryFrom<[T; K1]>,
 {
+    type Error = <HA1<U, K1> as TryFrom<[T; K1]>>::Error;
+
     #[inline]
-    fn from(value: [[T; K1]; K0]) -> Self {
-        HA2(value.map(HA1::from))
+    fn try_from(value: [[T; K1]; K0]) -> Result<Self, Self::Error> {
+        Ok(HA2(value
+            .into_iter()
+            .map(HA1::try_from)
+            .collect::<Result<_, _>>()?))
     }
 }
 
-impl<T, U, const K0: usize, const K1: usize, const K2: usize> From<[[[T; K2]; K1]; K0]>
+impl<T, U, const K0: usize, const K1: usize, const K2: usize> TryFrom<[[[T; K2]; K1]; K0]>
     for HA3<U, K0, K1, K2>
 where
-    U: From<T>,
+    HA2<U, K1, K2>: TryFrom<[[T; K2]; K1]>,
 {
+    type Error = <HA2<U, K1, K2> as TryFrom<[[T; K2]; K1]>>::Error;
+
     #[inline]
-    fn from(value: [[[T; K2]; K1]; K0]) -> Self {
-        HA3(value.map(HA2::from))
+    fn try_from(value: [[[T; K2]; K1]; K0]) -> Result<Self, Self::Error> {
+        Ok(HA3(value
+            .into_iter()
+            .map(HA2::try_from)
+            .collect::<Result<_, _>>()?))
     }
 }
 
-impl<T, U, const K0: usize, const K1: usize> From<[[T; K1]; K0]> for HigherArr2<U, K0, K1>
+impl<T, U, const K0: usize, const K1: usize> TryFrom<[[T; K1]; K0]> for HigherArr2<U, K0, K1>
 where
-    U: From<T>,
+    U: TryFrom<T>,
 {
+    // type Error = <HA1<U, K1> as TryFrom<[T; K1]>>::Error;
+    type Error = U::Error;
+
     #[inline]
-    fn from(value: [[T; K1]; K0]) -> Self {
-        HigherArr2(Box::new(value.into()))
+    fn try_from(value: [[T; K1]; K0]) -> Result<Self, Self::Error> {
+        Ok(HigherArr2(Box::new(value.try_into()?)))
     }
 }
 
-impl<T, U, const K0: usize, const K1: usize, const K2: usize> From<[[[T; K2]; K1]; K0]>
+impl<T, U, const K0: usize, const K1: usize, const K2: usize> TryFrom<[[[T; K2]; K1]; K0]>
     for HigherArr3<U, K0, K1, K2>
 where
-    U: From<T>,
+    U: TryFrom<T>,
 {
-    fn from(value: [[[T; K2]; K1]; K0]) -> Self {
-        HigherArr3(Box::new(value.into()))
+    type Error = U::Error;
+
+    #[inline]
+    fn try_from(value: [[[T; K2]; K1]; K0]) -> Result<Self, Self::Error> {
+        Ok(HigherArr3(Box::new(value.try_into()?)))
     }
 }
 
@@ -527,16 +572,26 @@ mod tests {
     }
 
     #[test]
-    fn ha_into() {
+    fn ha_try_into() {
         let h = harr2![[0, 1, 2], [2, 3, 4]];
         let arr = [[0, 1, 2], [2, 3, 4]];
-        let g: HigherArr2<i32, 2, 3> = arr.into();
+        let g: HigherArr2<i32, 2, 3> = arr.try_into().unwrap();
         assert_eq!(h, g);
 
         let h = harr3![[[0], [1]], [[2], [2]], [[3], [4]]];
         let arr = [[[0], [1]], [[2], [2]], [[3], [4]]];
-        let g: HigherArr3<i32, 3, 2, 1> = arr.into();
+        let g: HigherArr3<i32, 3, 2, 1> = arr.try_into().unwrap();
         assert_eq!(h, g);
+
+        let h = HigherArr2::<u32, 1, 2>::try_from([[0i32, 0i32]]);
+        assert!(h.is_ok());
+        let g = HigherArr2::<u32, 1, 2>::try_from([[0i32, -1i32]]);
+        println!("{:?}", g);
+        assert!(g.is_err());
+
+        let cond = HigherArr2::<Simplex<f32, 2>, 1, 1>::try_from([[([0.0, 0.0], 0.0)]]);
+        println!("{:?}", cond);
+        assert!(cond.is_err());
     }
 
     #[test]
