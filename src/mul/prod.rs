@@ -100,6 +100,33 @@ pub struct HA2<V, const K0: usize, const K1: usize>(pub [HA1<V, K1>; K0]);
 #[derive(Clone, Debug, PartialEq)]
 pub struct HA3<V, const K0: usize, const K1: usize, const K2: usize>(pub [HA2<V, K1, K2>; K0]);
 
+impl<V, const K0: usize> Default for HA1<V, K0>
+where
+    [V; K0]: Default,
+{
+    fn default() -> Self {
+        Self(Default::default())
+    }
+}
+
+impl<V, const K0: usize, const K1: usize> Default for HA2<V, K0, K1>
+where
+    [HA1<V, K1>; K0]: Default,
+{
+    fn default() -> Self {
+        Self(Default::default())
+    }
+}
+
+impl<V, const K0: usize, const K1: usize, const K2: usize> Default for HA3<V, K0, K1, K2>
+where
+    [HA2<V, K1, K2>; K0]: Default,
+{
+    fn default() -> Self {
+        Self(Default::default())
+    }
+}
+
 macro_rules! index {
     (1) => {
         fn index(&self, [k0]: [usize; 1]) -> &Self::Output {
@@ -210,13 +237,31 @@ impl<'a, V, const K0: usize> IntoIterator for &'a HA1<V, K0> {
 impl_into_iter!(2, HA2[K0, K1], HA1);
 impl_into_iter!(3, HA3[K0, K1, K2], HA2);
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct HigherArr2<V, const K0: usize, const K1: usize>(pub Box<HA2<V, K0, K1>>);
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct HigherArr3<V, const K0: usize, const K1: usize, const K2: usize>(
     pub Box<HA3<V, K0, K1, K2>>,
 );
+
+impl<V, const K0: usize, const K1: usize> Default for HigherArr2<V, K0, K1>
+where
+    HA2<V, K0, K1>: Default,
+{
+    fn default() -> Self {
+        Self(Box::new(Default::default()))
+    }
+}
+
+impl<V, const K0: usize, const K1: usize, const K2: usize> Default for HigherArr3<V, K0, K1, K2>
+where
+    HA3<V, K0, K1, K2>: Default,
+{
+    fn default() -> Self {
+        Self(Box::new(Default::default()))
+    }
+}
 
 #[macro_export(local_inner_macros)]
 macro_rules! ha1 {
@@ -486,12 +531,20 @@ mod tests {
         let h = harr2![[0, 1, 2], [2, 3, 4]];
         let arr = [[0, 1, 2], [2, 3, 4]];
         let g: HigherArr2<i32, 2, 3> = arr.into();
-        assert_eq!(h.0, g.0);
+        assert_eq!(h, g);
 
         let h = harr3![[[0], [1]], [[2], [2]], [[3], [4]]];
         let arr = [[[0], [1]], [[2], [2]], [[3], [4]]];
         let g: HigherArr3<i32, 3, 2, 1> = arr.into();
-        assert_eq!(h.0, g.0);
+        assert_eq!(h, g);
+    }
+
+    #[test]
+    fn ha_default() {
+        let h = HigherArr2::<i32, 1, 2>::default();
+        assert_eq!(h, harr2![[0, 0]]);
+        let h = HigherArr3::<i32, 1, 2, 3>::default();
+        assert_eq!(h, harr3![[[0, 0, 0], [0, 0, 0]]]);
     }
 
     #[test]
