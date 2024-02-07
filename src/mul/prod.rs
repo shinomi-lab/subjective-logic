@@ -91,13 +91,13 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct HA1<V, const K0: usize>(pub [V; K0]);
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct HA2<V, const K0: usize, const K1: usize>(pub [HA1<V, K1>; K0]);
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct HA3<V, const K0: usize, const K1: usize, const K2: usize>(pub [HA2<V, K1, K2>; K0]);
 
 macro_rules! index {
@@ -305,6 +305,57 @@ macro_rules! impl_higher_arr {
 impl_higher_arr!(2, HA2, HigherArr2[K0, K1]);
 impl_higher_arr!(3, HA3, HigherArr3[K0, K1, K2]);
 
+impl<T, U, const K0: usize> From<[T; K0]> for HA1<U, K0>
+where
+    U: From<T>,
+{
+    #[inline]
+    fn from(value: [T; K0]) -> Self {
+        HA1(value.map(U::from))
+    }
+}
+
+impl<T, U, const K0: usize, const K1: usize> From<[[T; K1]; K0]> for HA2<U, K0, K1>
+where
+    U: From<T>,
+{
+    #[inline]
+    fn from(value: [[T; K1]; K0]) -> Self {
+        HA2(value.map(HA1::from))
+    }
+}
+
+impl<T, U, const K0: usize, const K1: usize, const K2: usize> From<[[[T; K2]; K1]; K0]>
+    for HA3<U, K0, K1, K2>
+where
+    U: From<T>,
+{
+    #[inline]
+    fn from(value: [[[T; K2]; K1]; K0]) -> Self {
+        HA3(value.map(HA2::from))
+    }
+}
+
+impl<T, U, const K0: usize, const K1: usize> From<[[T; K1]; K0]> for HigherArr2<U, K0, K1>
+where
+    U: From<T>,
+{
+    #[inline]
+    fn from(value: [[T; K1]; K0]) -> Self {
+        HigherArr2(Box::new(value.into()))
+    }
+}
+
+impl<T, U, const K0: usize, const K1: usize, const K2: usize> From<[[[T; K2]; K1]; K0]>
+    for HigherArr3<U, K0, K1, K2>
+where
+    U: From<T>,
+{
+    fn from(value: [[[T; K2]; K1]; K0]) -> Self {
+        HigherArr3(Box::new(value.into()))
+    }
+}
+
 pub trait Product2<T0, T1> {
     fn product2(t0: T0, t1: T1) -> Self;
 }
@@ -428,6 +479,19 @@ mod tests {
         higher_range_checker3([0, 3, 0]);
         higher_range_checker3([2, 0, 0]);
         higher_range_checker3([0, 0, 0]);
+    }
+
+    #[test]
+    fn ha_into() {
+        let h = harr2![[0, 1, 2], [2, 3, 4]];
+        let arr = [[0, 1, 2], [2, 3, 4]];
+        let g: HigherArr2<i32, 2, 3> = arr.into();
+        assert_eq!(h.0, g.0);
+
+        let h = harr3![[[0], [1]], [[2], [2]], [[3], [4]]];
+        let arr = [[[0], [1]], [[2], [2]], [[3], [4]]];
+        let g: HigherArr3<i32, 3, 2, 1> = arr.into();
+        assert_eq!(h.0, g.0);
     }
 
     #[test]
