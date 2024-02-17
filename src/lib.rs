@@ -12,10 +12,7 @@ mod tests {
     use approx::{assert_relative_eq, assert_ulps_eq};
 
     use crate::bi::{BOpinion, BSimplex};
-    use crate::mul::{
-        op::{Abduction, Deduction},
-        Opinion1d, OpinionRef, Projection, Simplex,
-    };
+    use crate::mul::{op::Deduction, Opinion1d, OpinionRef, Projection, Simplex};
     use crate::{harr2, harr3};
 
     #[test]
@@ -230,32 +227,6 @@ mod tests {
             BSimplex::<f32>::new(0.0, 0.7, 0.3),
         ];
         println!("{}", wa.deduce(&wxa, 0.5));
-    }
-
-    #[test]
-    fn test_abduction() {
-        let conds = [
-            Simplex::<f32, 3>::new_unchecked([0.25, 0.04, 0.00], 0.71),
-            Simplex::<f32, 3>::new_unchecked([0.00, 0.50, 0.50], 0.00),
-            Simplex::<f32, 3>::new_unchecked([0.00, 0.25, 0.75], 0.00),
-        ];
-        let ax = [0.70, 0.20, 0.10];
-        let wy = Simplex::<f32, 3>::new_unchecked([0.00, 0.43, 0.00], 0.57);
-        let (wx, ay) = Abduction::abduce(&wy, &conds, ax).unwrap();
-        println!("{:?}, {:?}", wx, ay);
-    }
-
-    #[test]
-    fn test_abduction2() {
-        let ax = [0.01, 0.495, 0.495];
-        let conds_ox = [
-            Simplex::<f32, 2>::new_unchecked([0.5, 0.0], 0.5),
-            Simplex::<f32, 2>::new_unchecked([0.5, 0.0], 0.5),
-            Simplex::<f32, 2>::new_unchecked([0.01, 0.01], 0.98),
-        ];
-        let mw_o = Simplex::<f32, 2>::new_unchecked([0.0, 0.0], 1.0);
-        let (mw_x, _) = Abduction::abduce(&mw_o, &conds_ox, ax).unwrap();
-        println!("{:?}", mw_x);
     }
 
     #[test]

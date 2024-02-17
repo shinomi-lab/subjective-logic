@@ -177,12 +177,12 @@ where
     fn fuse(&self, lhs: OpinionRef<'a, T, V>, rhs: OpinionRef<'a, T, V>) -> Self::Output {
         let s = compute_simlex(self, lhs.simplex, rhs.simplex);
         let a = compute_base_rate(self, lhs, rhs);
-        let w = Self::Output::from_simplex_unchecked(s, a);
-        if matches!(self, FuseOp::ECm) {
-            w.uncertainty_maximized()
+        let s = if matches!(self, FuseOp::ECm) {
+            s.uncertainty_maximized(&a)
         } else {
-            w
-        }
+            s
+        };
+        Self::Output::from_simplex_unchecked(s, a)
     }
 }
 
@@ -376,52 +376,53 @@ where
 
 impl<Cond, T, U, X, Y, V> InverseCondition<X, Y, T, U, V> for Cond
 where
-    T: IndexedContainer<X, Output = V>,
+    T: IndexedContainer<X, Output = V> + std::fmt::Debug,
     U: IndexedContainer<Y, Output = V>,
     Cond: IndexedContainer<X, Output = SimplexBase<U, V>>,
     X: Copy,
-    Y: Copy,
-    V: Float + AddAssign + DivAssign + Sum,
+    Y: Copy + std::fmt::Debug,
+    V: Float + AddAssign + DivAssign + Sum + UlpsEq + std::fmt::Debug,
 {
     type InvCond = U::Map<SimplexBase<T, V>>;
     fn inverse(&self, ax: &T, ay: &U) -> Self::InvCond {
         let p_yx: Cond::Map<U> = Cond::map(|x| self[x].projection(ay));
+        let u_yx = T::from_fn(|x| self[x].max_uncertainty(ay));
         let p_xy: U::Map<T::Map<V>> = U::map(|y| {
             T::map(|x| ax[x] * p_yx[x][y] / T::keys().map(|xd| ax[xd] * p_yx[xd][y]).sum::<V>())
         });
-        let u_yx_sum = Cond::keys().map(|x| self[x].uncertainty).sum::<V>();
         let irrelevance_yx = U::from_fn(|y| {
             V::one() - T::keys().map(|x| p_yx[x][y]).reduce(<V>::max).unwrap()
                 + T::keys().map(|x| p_yx[x][y]).reduce(<V>::min).unwrap()
         });
-        let weights_yx = if u_yx_sum == V::zero() {
-            T::from_fn(|_| V::zero())
-        } else {
-            T::from_fn(|x| self[x].uncertainty / u_yx_sum)
-        };
-        let u_yx_marginal = T::from_fn(|x| {
-            U::keys()
-                .map(|y| p_yx[x][y] / ay[y])
-                .reduce(<V>::min)
-                .unwrap()
-        });
-        let u_yx_weight = T::from_fn(|x| {
-            let tmp = u_yx_marginal[x];
-            if tmp == V::zero() {
-                V::zero()
-            } else {
-                weights_yx[x] * self[x].uncertainty / tmp
-            }
-        });
-        let u_yx_exp: V = T::keys().map(|x| u_yx_weight[x]).sum();
-        let u_xy_marginal: U = U::from_fn(|y| {
+        let max_u_xy: U = U::from_fn(|y| {
             T::keys()
                 .map(|x| p_yx[x][y] / T::keys().map(|k| ax[k] * p_yx[k][y]).sum::<V>())
                 .reduce(<V>::min)
                 .unwrap()
         });
+        let u_yx_sum = Cond::keys().map(|x| u_yx[x]).sum::<V>();
+        let weights_yx = if u_yx_sum == V::zero() {
+            T::from_fn(|_| V::zero())
+        } else {
+            T::from_fn(|x| u_yx[x] / u_yx_sum)
+        };
+        let max_u_yx = T::from_fn(|x| {
+            U::keys()
+                .map(|y| p_yx[x][y] / ay[y])
+                .reduce(<V>::min)
+                .unwrap()
+        });
+        let weighted_u_yx = T::from_fn(|x| {
+            let u = max_u_yx[x];
+            if ulps_eq!(u, V::zero()) {
+                V::zero()
+            } else {
+                weights_yx[x] * u_yx[x] / u
+            }
+        });
+        let wprop_u_yx: V = T::keys().map(|x| weighted_u_yx[x]).sum();
         U::map(|y| {
-            let u = u_xy_marginal[y] * (u_yx_exp + (V::one() - u_yx_exp) * irrelevance_yx[y]);
+            let u = max_u_xy[y] * (wprop_u_yx + irrelevance_yx[y] - wprop_u_yx * irrelevance_yx[y]);
             let b = T::from_fn(|x| p_xy[y][x] - u * ax[x]);
             SimplexBase::new_unchecked(b, u)
         })
@@ -438,8 +439,8 @@ where
 
     /// Computes the conditionally abduced opinion of `self` with a base rate vector `ax`
     /// by `conds` representing a collection of conditional opinions.
-    /// If a marginal base rate cannot be computed from `conds`, ay is used instead.
-    fn abduce(self, conds: Cond, ax: T) -> Option<(Self::Output, U)>;
+    /// If a marginal base rate cannot be computed from `conds`, return `None`.
+    fn abduce(self, conds: Cond, ax: T) -> Option<Self::Output>;
     fn abduce_with(self, conds: Cond, ax: T, ay: &U) -> Self::Output;
 }
 
@@ -455,9 +456,9 @@ where
 {
     type Output = Opinion<T, V>;
 
-    fn abduce(self, conds: &'a Cond, ax: T) -> Option<(Self::Output, U)> {
+    fn abduce(self, conds: &'a Cond, ax: T) -> Option<Self::Output> {
         let ay = U::marginal_base_rate(&ax, conds)?;
-        Some((self.abduce_with(conds, ax, &ay), ay))
+        Some(self.abduce_with(conds, ax, &ay))
     }
 
     fn abduce_with(self, conds: &'a Cond, ax: T, ay: &U) -> Self::Output {
@@ -466,11 +467,53 @@ where
     }
 }
 
+impl<'a, Cond, X, Y, T, U, V> Abduction<&'a Cond, X, Y, T, U> for OpinionRef<'a, U, V>
+where
+    Cond: InverseCondition<X, Y, T, U, V> + IndexedContainer<X, Output = SimplexBase<U, V>>,
+    Cond::InvCond: IndexedContainer<Y, Output = SimplexBase<T, V>> + 'a,
+    T: IndexedContainer<X, Output = V> + 'a,
+    U: IndexedContainer<Y, Output = V> + MBR<X, Y, T, &'a Cond, U, V>,
+    X: Copy,
+    Y: Copy,
+    V: Float + AddAssign + DivAssign + Sum + UlpsEq,
+{
+    type Output = Opinion<T, V>;
+
+    fn abduce(self, conds: &'a Cond, ax: T) -> Option<Self::Output> {
+        self.simplex.abduce(conds, ax)
+    }
+
+    fn abduce_with(self, conds: &'a Cond, ax: T, ay: &U) -> Self::Output {
+        self.simplex.abduce_with(conds, ax, ay)
+    }
+}
+
+impl<'a, Cond, X, Y, T, U, V> Abduction<&'a Cond, X, Y, T, U> for &'a Opinion<U, V>
+where
+    Cond: InverseCondition<X, Y, T, U, V> + IndexedContainer<X, Output = SimplexBase<U, V>>,
+    Cond::InvCond: IndexedContainer<Y, Output = SimplexBase<T, V>> + 'a,
+    T: IndexedContainer<X, Output = V> + 'a,
+    U: IndexedContainer<Y, Output = V> + MBR<X, Y, T, &'a Cond, U, V>,
+    X: Copy,
+    Y: Copy,
+    V: Float + AddAssign + DivAssign + Sum + UlpsEq,
+{
+    type Output = Opinion<T, V>;
+
+    fn abduce(self, conds: &'a Cond, ax: T) -> Option<Self::Output> {
+        self.as_ref().abduce(conds, ax)
+    }
+
+    fn abduce_with(self, conds: &'a Cond, ax: T, ay: &U) -> Self::Output {
+        self.as_ref().abduce_with(conds, ax, ay)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::mul::{
-        op::{Deduction, Fuse, FuseAssign, FuseOp},
-        Opinion1d, OpinionRef, Projection, Simplex,
+        op::{Abduction, Deduction, Fuse, FuseAssign, FuseOp},
+        Opinion1d, OpinionRef, Projection, Simplex, MBR,
     };
 
     macro_rules! nround {
@@ -625,5 +668,23 @@ mod tests {
         }
         def!(f32);
         def!(f64);
+    }
+
+    #[test]
+    fn test_abduction() {
+        let dcond = [
+            Simplex::new([0.50, 0.25, 0.25], 0.0),
+            Simplex::new([0.00, 0.50, 0.50], 0.0),
+            Simplex::new([0.00, 0.25, 0.75], 0.0),
+        ];
+        let ax = [0.70, 0.20, 0.10];
+        let wy = Opinion1d::new([0.00, 0.43, 0.00], 0.57, [0.0, 0.0, 1.0]);
+        let m_ay = <[f32; 3]>::marginal_base_rate(&ax, &dcond).unwrap();
+        println!("{m_ay:?}");
+
+        let wx = wy.abduce(&dcond, ax).unwrap();
+        assert_eq!(wx.b().map(nround![f32, 2]), [0.0, 7.0, 0.0]);
+        assert_eq!(nround![f32, 2](wx.u()), 93.0);
+        assert_eq!(wx.projection().map(nround![f32, 2]), [65.0, 26.0, 9.0]);
     }
 }

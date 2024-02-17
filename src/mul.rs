@@ -246,54 +246,34 @@ where
     }
 }
 
-pub trait MaxUncertainty<Idx, V> {
+pub trait MaxUncertainty<Idx, V, T> {
     type Output;
 
     /// Returns the uncertainty maximized opinion of `self`.
-    fn max_uncertainty(&self) -> V;
+    fn max_uncertainty(&self, a: &T) -> V;
 
     /// Returns the uncertainty maximized opinion of `self`.
-    fn uncertainty_maximized(&self) -> Self::Output;
+    fn uncertainty_maximized(&self, a: &T) -> Self::Output;
 }
 
-impl<'a, T, V, Idx> MaxUncertainty<Idx, V> for OpinionRef<'a, T, V>
+impl<'a, T, V, Idx> MaxUncertainty<Idx, V, T> for SimplexBase<T, V>
 where
-    T: IndexedContainer<Idx, Output = V> + Clone,
+    T: IndexedContainer<Idx, Output = V>,
     V: Float + AddAssign + DivAssign,
     Idx: Copy,
 {
-    type Output = Opinion<T, V>;
+    type Output = SimplexBase<T, V>;
 
-    fn max_uncertainty(&self) -> V {
-        let p = self.projection();
-        T::keys()
-            .map(|i| p[i] / self.base_rate[i])
-            .reduce(<V>::min)
-            .unwrap()
+    fn max_uncertainty(&self, a: &T) -> V {
+        let p = self.projection(a);
+        T::keys().map(|i| p[i] / a[i]).reduce(<V>::min).unwrap()
     }
 
-    fn uncertainty_maximized(&self) -> Self::Output {
-        let p = self.projection();
-        let u_max = self.max_uncertainty();
-        let b_max = T::from_fn(|i| p[i] - self.base_rate[i] * u_max);
-        Opinion::new_unchecked(b_max, u_max, self.base_rate.clone())
-    }
-}
-
-impl<T, V, Idx> MaxUncertainty<Idx, V> for Opinion<T, V>
-where
-    T: IndexedContainer<Idx, Output = V> + Clone,
-    V: Float + AddAssign + DivAssign,
-    Idx: Copy,
-{
-    type Output = Opinion<T, V>;
-
-    fn max_uncertainty(&self) -> V {
-        self.as_ref().max_uncertainty()
-    }
-
-    fn uncertainty_maximized(&self) -> Self::Output {
-        self.as_ref().uncertainty_maximized()
+    fn uncertainty_maximized(&self, a: &T) -> Self::Output {
+        let p = self.projection(a);
+        let u_max = self.max_uncertainty(a);
+        let b_max = T::from_fn(|i| p[i] - a[i] * u_max);
+        SimplexBase::new_unchecked(b_max, u_max)
     }
 }
 
@@ -536,9 +516,9 @@ mod tests {
     use approx::{assert_ulps_eq, ulps_eq};
     use num_traits::Float;
 
-    use crate::mul::check_base_rate;
+    use crate::mul::{check_base_rate, op::Abduction};
 
-    use super::{Discount, Opinion1d, Projection, Simplex, MBR};
+    use super::{Discount, MaxUncertainty, Opinion1d, Projection, Simplex, MBR};
 
     #[test]
     fn test_discount() {
@@ -615,5 +595,39 @@ mod tests {
         }
         def!(f32);
         def!(f64);
+    }
+
+    #[test]
+    fn test_abduction() {
+        let conds = [
+            Simplex::<f32, 3>::new_unchecked([0.25, 0.04, 0.00], 0.71),
+            Simplex::<f32, 3>::new_unchecked([0.00, 0.50, 0.50], 0.00),
+            Simplex::<f32, 3>::new_unchecked([0.00, 0.25, 0.75], 0.00),
+        ];
+        let ax = [0.70, 0.20, 0.10];
+        let wy = Opinion1d::<f32, 3>::new([0.00, 0.43, 0.00], 0.57, [0.5, 0.5, 0.0]);
+        let wx = wy.abduce(&conds, ax).unwrap();
+        let m_ay = <[f32; 3]>::marginal_base_rate(&ax, &conds).unwrap();
+        println!("{:?}", wx);
+        println!("{:?}", m_ay);
+    }
+
+    #[test]
+    fn test_abduction2() {
+        let ax = [0.01, 0.495, 0.495];
+        let conds_ox = [
+            Simplex::<f32, 2>::new_unchecked([0.5, 0.0], 0.5),
+            Simplex::<f32, 2>::new_unchecked([0.5, 0.0], 0.5),
+            Simplex::<f32, 2>::new_unchecked([0.01, 0.01], 0.98),
+        ];
+        let mw_o = Opinion1d::<f32, 2>::new([0.0, 0.0], 1.0, [0.5, 0.5]);
+        let mw_x = mw_o.abduce(&conds_ox, ax).unwrap();
+        println!("{:?}", mw_x);
+    }
+
+    #[test]
+    fn test_max_u() {
+        let w = Simplex::new([0.0, 0.0], 1.0);
+        assert_eq!(w.max_uncertainty(&[0.0, 1.0]), 1.0);
     }
 }
