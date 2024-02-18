@@ -376,12 +376,12 @@ where
 
 impl<Cond, T, U, X, Y, V> InverseCondition<X, Y, T, U, V> for Cond
 where
-    T: IndexedContainer<X, Output = V> + std::fmt::Debug,
+    T: IndexedContainer<X, Output = V>,
     U: IndexedContainer<Y, Output = V>,
     Cond: IndexedContainer<X, Output = SimplexBase<U, V>>,
     X: Copy,
-    Y: Copy + std::fmt::Debug,
-    V: Float + AddAssign + DivAssign + Sum + UlpsEq + std::fmt::Debug,
+    Y: Copy,
+    V: Float + AddAssign + DivAssign + Sum + UlpsEq,
 {
     type InvCond = U::Map<SimplexBase<T, V>>;
     fn inverse(&self, ax: &T, ay: &U) -> Self::InvCond {
