@@ -158,12 +158,12 @@ mod tests {
     #[test]
     fn test_deduction_mop() {
         let a = [0.5, 0.5];
-        let s = Simplex::<f32, 2>::new([0.0, 0.9], 0.1);
-        let w = Opinion1d::<f32, 2>::from_simplex_unchecked(s.clone(), a.clone());
+        let s = Simplex::new([0.0, 0.9], 0.1);
+        let w = Opinion1d::from((s.clone(), a.clone()));
         let ay = [0.75, 0.25];
         let conds = [
-            Simplex::<f32, 2>::new([0.5, 0.25], 0.25),
-            Simplex::<f32, 2>::new([0.5, 0.25], 0.25),
+            Simplex::new([0.5, 0.25], 0.25),
+            Simplex::new([0.5, 0.25], 0.25),
         ];
         let w2 = w.deduce_with(&conds, ay);
         let w3 = OpinionRef::from((&s, &a)).deduce_with(&conds, ay);

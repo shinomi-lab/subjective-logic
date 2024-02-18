@@ -182,7 +182,7 @@ where
         } else {
             s
         };
-        Self::Output::from_simplex_unchecked(s, a)
+        (s, a).into()
     }
 }
 

@@ -52,13 +52,6 @@ pub struct OpinionBase<S, T> {
 }
 
 impl<S, T> OpinionBase<S, T> {
-    pub fn from_simplex_unchecked(s: S, a: T) -> Self {
-        Self {
-            simplex: s,
-            base_rate: a,
-        }
-    }
-
     pub fn as_ref(&self) -> OpinionBase<&S, &T> {
         OpinionBase {
             simplex: &self.simplex,
@@ -126,12 +119,9 @@ impl<T, U> OpinionRef<'_, T, U> {
     }
 }
 
-impl<'a, 'b: 'a, T, U> From<(&'a SimplexBase<T, U>, &'b T)> for OpinionRef<'a, T, U> {
-    fn from(value: (&'a SimplexBase<T, U>, &'b T)) -> Self {
-        OpinionBase {
-            simplex: &value.0,
-            base_rate: &value.1,
-        }
+impl<S, T> From<(S, T)> for OpinionBase<S, T> {
+    fn from((simplex, base_rate): (S, T)) -> Self {
+        Self { simplex, base_rate }
     }
 }
 
@@ -308,7 +298,7 @@ where
 {
     type Output = Opinion<T, V>;
     fn discount(&self, t: V) -> Self::Output {
-        Opinion::from_simplex_unchecked(self.simplex.discount(t), (*self.base_rate).clone())
+        (self.simplex.discount(t), (*self.base_rate).clone()).into()
     }
 }
 
