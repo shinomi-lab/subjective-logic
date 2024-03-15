@@ -52,7 +52,7 @@ dependencies = [
 
 [[package]]
 name = "subjective-logic"
-version = "0.8.2"
+version = "0.8.3"
 dependencies = [
  "approx",
  "num-traits",

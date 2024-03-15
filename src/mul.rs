@@ -5,7 +5,7 @@ use approx::{ulps_eq, UlpsEq};
 use num_traits::Float;
 use std::{
     array,
-    fmt::Display,
+    fmt::Debug,
     iter::Sum,
     ops::{AddAssign, DivAssign, Index, IndexMut},
 };
@@ -13,15 +13,15 @@ use std::{
 use crate::errors::{check_is_one, InvalidValueError};
 use crate::{approx_ext, errors::check_unit_interval};
 
-#[derive(Default, Debug, Clone, PartialEq)]
+#[derive(Default, Clone, PartialEq)]
 pub struct SimplexBase<T, V> {
     pub belief: T,
     pub uncertainty: V,
 }
 
-impl<T: std::fmt::Debug, V: Display> Display for SimplexBase<T, V> {
+impl<T: Debug, V: Debug> Debug for SimplexBase<T, V> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?},{}", self.belief, self.uncertainty)
+        write!(f, "b={:?}, u={:?}", self.belief, self.uncertainty)
     }
 }
 
@@ -45,7 +45,7 @@ impl<T, V> SimplexBase<T, V> {
 }
 
 /// The generlized structure of a multinomial opinion.
-#[derive(Default, Debug, Clone, PartialEq)]
+#[derive(Default, Clone, PartialEq)]
 pub struct OpinionBase<S, T> {
     pub simplex: S,
     pub base_rate: T,
@@ -60,9 +60,9 @@ impl<S, T> OpinionBase<S, T> {
     }
 }
 
-impl<S: Display, T: Display> Display for OpinionBase<S, T> {
+impl<S: Debug, T: Debug> Debug for OpinionBase<S, T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{},{}", self.simplex, self.base_rate)
+        write!(f, "{:?}, a={:?}", self.simplex, self.base_rate)
     }
 }
 
@@ -506,9 +506,15 @@ mod tests {
     use approx::{assert_ulps_eq, ulps_eq};
     use num_traits::Float;
 
-    use crate::mul::{check_base_rate, op::Abduction};
+    use crate::{
+        harr2,
+        mul::{check_base_rate, op::Abduction},
+    };
 
-    use super::{Discount, MaxUncertainty, Opinion1d, Projection, Simplex, MBR};
+    use super::{
+        op::Deduction, prod::Product2, Discount, MaxUncertainty, Opinion, Opinion1d, Projection,
+        Simplex, MBR,
+    };
 
     #[test]
     fn test_discount() {
@@ -619,5 +625,31 @@ mod tests {
     fn test_max_u() {
         let w = Simplex::new([0.0, 0.0], 1.0);
         assert_eq!(w.max_uncertainty(&[0.0, 1.0]), 1.0);
+    }
+
+    #[test]
+    fn test_float_size() {
+        //  [0.744088550149486, 0.2483314796475328] u=0.007579970202981336
+        //  [0.578534230384464, 0.413885799412554y] u=0.007579970202981336
+        //  [0.578534230384464, 0.413885799412554y] u=0.007579970202981336
+        let conds = harr2![
+            [
+                Simplex::try_from(([0.95f64, 0.00], 0.05)).unwrap(),
+                Simplex::try_from(([0.7440885, 0.24833153], 0.00757997)).unwrap(),
+            ],
+            [
+                // Simplex::new_unchecked([0.5785341, 0.41388586], 0.00757997),
+                // Simplex::new_unchecked([0.5785342, 0.41388586], 0.00757997),
+                Simplex::try_from(([0.5785342, 0.41388586], 0.00757994)).unwrap(),
+                Simplex::try_from(([0.5785342, 0.41388586], 0.00757994)).unwrap(),
+            ]
+        ];
+        let w0 = Opinion1d::vacuous_with([0.4995, 0.5005]);
+        let w1 = Opinion1d::vacuous_with([0.000001, 0.999999]);
+        let w1d = Opinion1d::new([0.0, 0.95], 0.05, [0.000001, 0.999999]);
+        let w = Opinion::product2(&w0, &w1).deduce(&conds);
+        let wd = Opinion::product2(&w0, &w1d).deduce(&conds);
+        println!("{w:?}");
+        println!("{wd:?}");
     }
 }
