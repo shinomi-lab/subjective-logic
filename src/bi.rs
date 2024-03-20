@@ -3,15 +3,15 @@ use num_traits::Float;
 use std::fmt::Display;
 
 use crate::errors::{check_is_one, check_unit_interval, InvalidValueError};
-use crate::mul::Simplex;
+use crate::mul::non_labeled::Simplex1d;
 
 /// The simplex of a binomial opinion, from which a base rate is excluded.
 #[derive(Debug, PartialEq)]
-pub struct BSimplex<T>(pub Simplex<T, 2>);
+pub struct BSimplex<T>(pub Simplex1d<T, 2>);
 
 impl<T> BSimplex<T> {
     fn new_unchecked(b: T, d: T, u: T) -> Self {
-        Self(Simplex::new_unchecked([b, d], u))
+        Self(Simplex1d::new_unchecked([b, d], u))
     }
 
     fn b(&self) -> &T {
@@ -69,7 +69,7 @@ macro_rules! impl_simplex {
             /// If even pameter does not satisfy the conditions, an error is returned.
             pub fn try_new(b: $ft, d: $ft, u: $ft) -> Result<Self, InvalidValueError> {
                 check_simplex(b, d, u)?;
-                Ok(Self(Simplex::new_unchecked([b, d], u)))
+                Ok(Self(Simplex1d::new_unchecked([b, d], u)))
             }
 
             /// Creates a new simplex of a binomial opinion from parameters which reqiure the same conditions as `try_new`.
@@ -427,7 +427,7 @@ macro_rules! impl_bop {
 impl_bop!(f32);
 impl_bop!(f64);
 
-impl<'a, T> From<&'a BSimplex<T>> for &'a Simplex<T, 2> {
+impl<'a, T> From<&'a BSimplex<T>> for &'a Simplex1d<T, 2> {
     fn from(value: &'a BSimplex<T>) -> Self {
         &value.0
     }

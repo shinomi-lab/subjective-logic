@@ -6,14 +6,19 @@ pub mod bi;
 pub mod convert;
 pub mod errors;
 pub mod mul;
+pub mod multi_array;
+pub mod ops;
 
 #[cfg(test)]
 mod tests {
     use approx::{assert_relative_eq, assert_ulps_eq};
 
-    use crate::bi::{BOpinion, BSimplex};
-    use crate::mul::{op::Deduction, Opinion1d, OpinionRef, Projection, Simplex};
-    use crate::{harr2, harr3};
+    use crate::{
+        bi::{BOpinion, BSimplex},
+        marr2, marr3,
+        mul::{Opinion, OpinionRef, Simplex},
+        ops::{Deduction, Projection},
+    };
 
     #[test]
     fn test_bsl_boundary() {
@@ -53,30 +58,6 @@ mod tests {
             };
         }
 
-        def!(f32);
-        def!(f64);
-    }
-
-    #[test]
-    fn test_msl_boundary() {
-        macro_rules! def {
-            ($ft: ty) => {
-                assert!(Opinion1d::<$ft, 2>::try_new([0.0, 0.0], 1.0, [0.0, 1.0]).is_ok());
-                assert!(Opinion1d::<$ft, 2>::try_new([0.0, 1.0], 0.0, [0.0, 1.0]).is_ok());
-                assert!(Opinion1d::<$ft, 2>::try_new([0.1, -0.1], 1.0, [0.0, 1.0])
-                    .map_err(|e| println!("{e}"))
-                    .is_err());
-                assert!(Opinion1d::<$ft, 2>::try_new([0.0, 1.0], 0.0, [1.1, -0.1])
-                    .map_err(|e| println!("{e}"))
-                    .is_err());
-                assert!(Opinion1d::<$ft, 2>::try_new([0.0, -1.0], 2.0, [1.1, -0.1])
-                    .map_err(|e| println!("{e}"))
-                    .is_err());
-                assert!(Opinion1d::<$ft, 2>::try_new([1.0, 1.0], -1.0, [1.1, -0.1])
-                    .map_err(|e| println!("{e}"))
-                    .is_err());
-            };
-        }
         def!(f32);
         def!(f64);
     }
@@ -159,7 +140,7 @@ mod tests {
     fn test_deduction_mop() {
         let a = [0.5, 0.5];
         let s = Simplex::new([0.0, 0.9], 0.1);
-        let w = Opinion1d::from((s.clone(), a.clone()));
+        let w = Opinion::from((s.clone(), a.clone()));
         let ay = [0.75, 0.25];
         let conds = [
             Simplex::new([0.5, 0.25], 0.25),
@@ -174,7 +155,7 @@ mod tests {
     fn test_deduction() {
         let b_a = 1.0;
         let b_xa = 0.0;
-        let wa = Opinion1d::<f32, 3>::new([b_a, 0.0, 0.0], 1.0 - b_a, [0.25, 0.25, 0.5]);
+        let wa = Opinion::new([b_a, 0.0, 0.0], 1.0 - b_a, [0.25, 0.25, 0.5]);
         let wxa = [
             BSimplex::<f32>::new(b_xa, 0.0, 1.0 - b_xa),
             BSimplex::<f32>::new(0.0, 0.0, 1.0),
@@ -194,17 +175,17 @@ mod tests {
         ];
         println!("{}", w.deduce(&cond, 0.5));
 
-        let wx = Opinion1d::<f32, 2>::new([0.7, 0.0], 0.3, [1.0 / 3.0, 2.0 / 3.0]);
+        let wx = Opinion::new([0.7, 0.0], 0.3, [1.0 / 3.0, 2.0 / 3.0]);
         let wyx = [
-            Simplex::<f32, 2>::new([0.72, 0.18], 0.1),
-            Simplex::<f32, 2>::new([0.13, 0.57], 0.3),
+            Simplex::new([0.72, 0.18], 0.1),
+            Simplex::new([0.13, 0.57], 0.3),
         ];
         println!("{:?}", wx.as_ref().deduce_with(&wyx, [0.5, 0.5]));
     }
 
     #[test]
     fn test_deduction2() {
-        let wa = Opinion1d::<f32, 3>::new([0.7, 0.1, 0.0], 0.2, [0.3, 0.3, 0.4]);
+        let wa = Opinion::new([0.7, 0.1, 0.0], 0.2, [0.3, 0.3, 0.4]);
         let wxa = [
             BSimplex::<f32>::new(0.7, 0.0, 0.3),
             BSimplex::<f32>::new(0.0, 0.7, 0.3),
@@ -214,9 +195,9 @@ mod tests {
         println!("{}|{}", wx, wx.projection());
 
         let wxa = [
-            Simplex::<f32, 2>::new([0.7, 0.0], 0.3),
-            Simplex::<f32, 2>::new([0.0, 0.7], 0.3),
-            Simplex::<f32, 2>::new([0.0, 0.0], 1.0),
+            Simplex::new([0.7, 0.0], 0.3),
+            Simplex::new([0.0, 0.7], 0.3),
+            Simplex::new([0.0, 0.0], 1.0),
         ];
         let wx = wa.as_ref().deduce_with(&wxa, [0.5, 0.5]);
         println!("{:?}|{}", wx, wx.projection()[0]);
@@ -232,8 +213,8 @@ mod tests {
     #[test]
     fn test_macro_import() {
         // let h = harr1![std::vec![0], std::vec![1], std::vec![1]];
-        let h2 = harr2![[std::vec![0], std::vec![1]], [std::vec![1], std::vec![1]]];
-        let h3 = harr3![
+        let h2 = marr2![[std::vec![0], std::vec![1]], [std::vec![1], std::vec![1]]];
+        let h3 = marr3![
             [[std::vec![0], std::vec![1]]],
             [[std::vec![1], std::vec![1]]]
         ];

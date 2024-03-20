@@ -1,19 +1,19 @@
 use crate::bi::BOpinion;
-use crate::mul;
+use crate::mul::non_labeled::Opinion1d;
 
 macro_rules! impl_convert {
     ($ft: ty) => {
-        impl From<BOpinion<$ft>> for mul::Opinion1d<$ft, 2> {
+        impl From<BOpinion<$ft>> for Opinion1d<$ft, 2> {
             fn from(value: BOpinion<$ft>) -> Self {
-                mul::Opinion1d {
+                Opinion1d {
                     simplex: value.simplex.0,
                     base_rate: [value.base_rate, 1.0 - value.base_rate],
                 }
             }
         }
 
-        impl From<mul::Opinion1d<$ft, 2>> for BOpinion<$ft> {
-            fn from(value: mul::Opinion1d<$ft, 2>) -> Self {
+        impl From<Opinion1d<$ft, 2>> for BOpinion<$ft> {
+            fn from(value: Opinion1d<$ft, 2>) -> Self {
                 BOpinion::<$ft>::new_unchecked(
                     value.b()[0],
                     value.b()[1],
@@ -23,8 +23,8 @@ macro_rules! impl_convert {
             }
         }
 
-        impl From<&mul::Opinion1d<$ft, 2>> for BOpinion<$ft> {
-            fn from(value: &mul::Opinion1d<$ft, 2>) -> Self {
+        impl From<&Opinion1d<$ft, 2>> for BOpinion<$ft> {
+            fn from(value: &Opinion1d<$ft, 2>) -> Self {
                 BOpinion::<$ft>::new_unchecked(
                     value.b()[0],
                     value.b()[1],

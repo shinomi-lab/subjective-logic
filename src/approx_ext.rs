@@ -20,3 +20,8 @@ pub fn in_unit_interval<V: Float + UlpsEq>(v: V) -> bool {
 pub fn is_one<V: Float + UlpsEq>(v: V) -> bool {
     ulps_eq!(v, V::one())
 }
+
+#[inline]
+pub fn is_zero<V: Float + UlpsEq>(v: V) -> bool {
+    ulps_eq!(v, V::zero())
+}
