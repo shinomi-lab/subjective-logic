@@ -1,9 +1,12 @@
 use std::{
+    array,
     ops::{Index, IndexMut, Mul},
     usize,
 };
 
-use crate::ops::{IndexedContainer, Product2, Product3};
+use num_traits::Zero;
+
+use crate::ops::{Container, ContainerMap, FromFn, Indexes, Product2, Product3, Zeros};
 
 #[derive(Clone)]
 pub struct MultiRange<const N: usize> {
@@ -183,12 +186,16 @@ impl<V, const K0: usize> FromIterator<V> for MArr1<V, K0> {
 
 impl<V, const K0: usize, const K1: usize> FromIterator<V> for MArr2<V, K0, K1> {
     fn from_iter<T: IntoIterator<Item = V>>(iter: T) -> Self {
-        let mut inner = Vec::with_capacity(K0);
-        let mut v = Vec::from_iter(iter);
+        let mut iter = iter.into_iter();
+        let mut i0 = Vec::with_capacity(K0);
         for _ in 0..K0 {
-            inner.push(MArr1::from_iter(v.drain(0..K1)));
+            let mut i1 = Vec::with_capacity(K1);
+            for _ in 0..K1 {
+                i1.push(iter.next().unwrap());
+            }
+            i0.push(MArr1(i1));
         }
-        Self(inner)
+        Self(i0)
     }
 }
 
@@ -196,35 +203,39 @@ impl<V, const K0: usize, const K1: usize, const K2: usize> FromIterator<V>
     for MArr3<V, K0, K1, K2>
 {
     fn from_iter<T: IntoIterator<Item = V>>(iter: T) -> Self {
-        let mut inner = Vec::with_capacity(K0);
-        let mut v = Vec::from_iter(iter);
+        let mut iter = iter.into_iter();
+        let mut i0 = Vec::with_capacity(K0);
         for _ in 0..K0 {
-            let mut inner2 = Vec::with_capacity(K1);
+            let mut i1 = Vec::with_capacity(K1);
             for _ in 0..K1 {
-                inner2.push(MArr1::from_iter(v.drain(0..K1)));
+                let mut i2 = Vec::with_capacity(K2);
+                for _ in 0..K2 {
+                    i2.push(iter.next().unwrap());
+                }
+                i1.push(MArr1(i2));
             }
-            inner.push(MArr2(inner2));
+            i0.push(MArr2(i1));
         }
-        Self(inner)
+        Self(i0)
     }
 }
 
-macro_rules! from_fn {
-    ($f:ident; $k0:ident) => {
-        MArr1(Vec::from(<[_; $k0]>::from_fn(|k0| $f([k0]))))
-    };
-    ($f:ident; $k0:ident, $k1:ident) => {
-        MArr2(Vec::from(<[_; $k0]>::from_fn(|k0| {
-            MArr1(Vec::from(<[_; $k1]>::from_fn(|k1| $f([k0, k1]))))
-        })))
-    };
-    ($f:ident; $k0:ident, $k1:ident, $k2: ident) => {
-        MArr3(Vec::from(<[_; $k0]>::from_fn(|k0| {
-            MArr2(Vec::from(<[_; $k1]>::from_fn(|k1| {
-                MArr1(Vec::from(<[_; $k2]>::from_fn(|k2| $f([k0, k1, k2]))))
-            })))
-        })))
-    };
+impl<V: Zero, const K0: usize> Zeros for MArr1<V, K0> {
+    fn zeros() -> Self {
+        MArr1::new(array::from_fn(|_| V::zero()))
+    }
+}
+
+impl<V: Zero, const K0: usize, const K1: usize> Zeros for MArr2<V, K0, K1> {
+    fn zeros() -> Self {
+        MArr2::new(array::from_fn(|_| MArr1::zeros()))
+    }
+}
+
+impl<V: Zero, const K0: usize, const K1: usize, const K2: usize> Zeros for MArr3<V, K0, K1, K2> {
+    fn zeros() -> Self {
+        MArr3::new(array::from_fn(|_| MArr2::zeros()))
+    }
 }
 
 macro_rules! impl_ha {
@@ -238,20 +249,24 @@ macro_rules! impl_ha {
             index_mut!($n);
         }
 
-        impl<V, const $k: usize$(, const $ks: usize)*> IndexedContainer<[usize; $n]> for $ha<V, $k$(, $ks)*> {
-            type Map<U> = $ha<U, $k$(, $ks)*>;
+        impl<V, const $k: usize$(, const $ks: usize)*> Indexes<[usize; $n]> for $ha<V, $k$(, $ks)*> {
+            type Iter = MultiRange<$n>;
 
-            fn keys() -> impl Iterator<Item = [usize; $n]> {
+            fn indexes() -> Self::Iter {
                 MultiRange::new([$k$(, $ks)*])
             }
+        }
 
-            fn map<U, F: FnMut([usize; $n]) -> U>(mut f: F) -> $ha<U, $k$(, $ks)*> {
-                from_fn!(f; $k$(,$ks)*)
+        impl<V, const $k: usize$(, const $ks: usize)*> FromFn<[usize; $n], V> for $ha<V, $k$(, $ks)*> {
+            fn from_fn<F: FnMut([usize; $n]) -> V>(f: F) -> Self {
+                Self::from_iter(Self::indexes().map(f))
             }
+        }
 
-            fn from_fn<F: FnMut([usize; $n]) -> Self::Output>(mut f: F) -> Self {
-                from_fn!(f; $k$(,$ks)*)
-            }
+        impl<V, const $k: usize$(, const $ks: usize)*> Container<[usize; $n]> for $ha<V, $k$(, $ks)*> {}
+
+        impl<V, const $k: usize$(, const $ks: usize)*> ContainerMap<[usize; $n]> for $ha<V, $k$(, $ks)*> {
+            type Map<U> = $ha<U, $k$(, $ks)*>;
         }
 
         impl<V, const $k: usize$(, const $ks: usize)*> $ha<V, $k$(, $ks)*> {
@@ -338,7 +353,6 @@ where
 
 impl<T, U, const K0: usize, const K1: usize> TryFrom<[[T; K1]; K0]> for MArr2<U, K0, K1>
 where
-    // U: TryFrom<T>,
     MArr1<U, K1>: TryFrom<[T; K1]>,
 {
     type Error = <MArr1<U, K1> as TryFrom<[T; K1]>>::Error;
@@ -393,7 +407,7 @@ mod tests {
     use crate::{
         mul::non_labeled::Simplex1d,
         multi_array::non_labeled::{MArr2, MArr3, MultiRange},
-        ops::IndexedContainer,
+        ops::FromFn,
     };
 
     use super::MArr1;
@@ -421,7 +435,7 @@ mod tests {
     }
 
     #[test]
-    fn test_higher_range2() {
+    fn test_multi_range2() {
         multi_range_checker2([3, 4]);
         multi_range_checker2([4, 3]);
         multi_range_checker2([0, 4]);
@@ -430,7 +444,7 @@ mod tests {
     }
 
     #[test]
-    fn test_higher_range3() {
+    fn test_multi_range3() {
         multi_range_checker3([2, 3, 4]);
         multi_range_checker3([2, 4, 3]);
         multi_range_checker3([3, 2, 4]);
@@ -508,7 +522,9 @@ mod tests {
         for i in 0..2 {
             for j in 0..3 {
                 for k in 0..4 {
-                    assert!(iter.next() == Some(&(i, j, k)));
+                    let a = iter.next();
+                    println!("{a:?}");
+                    assert!(a == Some(&(i, j, k)));
                 }
             }
         }

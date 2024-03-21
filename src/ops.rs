@@ -1,3 +1,5 @@
+use std::ops::Index;
+
 pub trait Projection<Idx, T> {
     /// Computes the probability projection of `self`.
     fn projection(&self) -> T;
@@ -73,36 +75,53 @@ pub trait Product3<T0, T1, T2> {
     fn product3(t0: T0, t1: T1, t2: T2) -> Self;
 }
 
-use std::{
-    array,
-    ops::{Index, IndexMut},
-};
+pub trait Indexes<K> {
+    type Iter: Iterator<Item = K>;
 
-pub trait Keys<I> {
-    type Iter: Iterator<Item = I> + Clone;
-    fn keys() -> Self::Iter;
+    fn indexes() -> Self::Iter;
 }
 
-pub trait IndexedContainer<K>: Index<K> + IndexMut<K> {
-    type Map<U>: Index<K, Output = U>;
+pub trait Container<K>: Indexes<K> + Index<K> {
+    fn iter<'a>(&'a self) -> impl Iterator<Item = &'a Self::Output>
+    where
+        Self::Output: 'a,
+    {
+        Self::indexes().map(|i| &self[i])
+    }
 
-    fn keys() -> impl Iterator<Item = K>;
-    fn map<U, F: FnMut(K) -> U>(f: F) -> Self::Map<U>;
-    fn from_fn<F: FnMut(K) -> <Self as Index<K>>::Output>(f: F) -> Self;
+    fn iter_with<'a>(&'a self) -> impl Iterator<Item = (K, &'a Self::Output)>
+    where
+        K: Clone,
+        Self::Output: 'a,
+    {
+        Self::indexes().map(|i| (i.clone(), &self[i]))
+    }
+
+    fn zip<'a, T: Index<K>>(
+        &'a self,
+        other: &'a T,
+    ) -> impl Iterator<Item = (&'a Self::Output, &'a T::Output)>
+    where
+        K: Clone,
+        Self::Output: 'a,
+        T::Output: 'a,
+    {
+        Self::indexes().map(|i| (&self[i.clone()], &other[i]))
+    }
 }
 
-impl<T, const N: usize> IndexedContainer<usize> for [T; N] {
-    type Map<U> = [U; N];
+pub trait ContainerMap<K> {
+    type Map<U>: FromFn<K, U> + Index<K, Output = U>;
 
-    fn keys() -> impl Iterator<Item = usize> {
-        0..N
+    fn map<U, F: FnMut(K) -> U>(f: F) -> Self::Map<U> {
+        Self::Map::from_fn(f)
     }
+}
 
-    fn map<U, F: FnMut(usize) -> U>(mut f: F) -> Self::Map<U> {
-        array::from_fn(|i| f(i))
-    }
+pub trait FromFn<K, V> {
+    fn from_fn<F: FnMut(K) -> V>(f: F) -> Self;
+}
 
-    fn from_fn<F: FnMut(usize) -> T>(mut f: F) -> Self {
-        array::from_fn(|i| f(i))
-    }
+pub trait Zeros {
+    fn zeros() -> Self;
 }

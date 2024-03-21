@@ -6,8 +6,9 @@ use std::{
 };
 
 use itertools::iproduct;
+use num_traits::Zero;
 
-use crate::ops::{IndexedContainer, Keys, Product2, Product3};
+use crate::ops::{Container, ContainerMap, FromFn, Indexes, Product2, Product3, Zeros};
 
 pub trait Domain {
     const LEN: Self::Idx;
@@ -20,6 +21,11 @@ impl<D: Domain<Idx = usize>> Keys<usize> for D {
     fn keys() -> Self::Iter {
         0..D::LEN
     }
+}
+
+pub trait Keys<I> {
+    type Iter: Iterator<Item = I> + Clone;
+    fn keys() -> Self::Iter;
 }
 
 pub struct Iter<'a, S>
@@ -104,38 +110,6 @@ where
     }
 }
 
-// pub struct IntoIter<S>
-// where
-//     S: IntoIterator,
-// {
-//     iters: std::vec::IntoIter<S>,
-//     iter: Option<<S as IntoIterator>::IntoIter>,
-// }
-
-// impl<S> Iterator for IntoIter<S>
-// where
-//     S: IntoIterator,
-// {
-//     type Item = <<S as IntoIterator>::IntoIter as Iterator>::Item;
-
-//     fn next(&mut self) -> Option<Self::Item> {
-//         match self.iter.take() {
-//             None => None,
-//             Some(mut iter) => match iter.next() {
-//                 None => {
-//                     self.iter = self.iters.next().map(|t| t.into_iter());
-//                     self.iter.as_mut()?.next()
-//                 }
-//                 Some(t) => {
-//                     self.iter = Some(iter);
-//                     Some(t)
-//                 }
-//             },
-//         }
-//     }
-// }
-
-#[derive(Clone)]
 pub struct MArrD1<D0: Domain, V> {
     _marker: PhantomData<D0>,
     inner: Vec<V>,
@@ -144,6 +118,15 @@ pub struct MArrD1<D0: Domain, V> {
 impl<D0: Domain, V: fmt::Debug> fmt::Debug for MArrD1<D0, V> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}{:?}", tynm::type_name::<D0>(), self.inner)
+    }
+}
+
+impl<D0: Domain, V: Clone> Clone for MArrD1<D0, V> {
+    fn clone(&self) -> Self {
+        Self {
+            _marker: PhantomData,
+            inner: self.inner.clone(),
+        }
     }
 }
 
@@ -159,13 +142,21 @@ where
 
 impl<D0, V> Default for MArrD1<D0, V>
 where
-    D0: Domain,
+    D0: Domain + Keys<D0::Idx>,
     V: Default,
 {
     fn default() -> Self {
-        let mut inner = Vec::with_capacity(D0::LEN.into());
-        inner.resize_with(D0::LEN.into(), V::default);
-        Self::new(inner)
+        Self::from_fn(|_| V::default())
+    }
+}
+
+impl<D0, V> Zeros for MArrD1<D0, V>
+where
+    D0: Domain + Keys<D0::Idx>,
+    V: Zero,
+{
+    fn zeros() -> Self {
+        Self::from_fn(|_| V::zero())
     }
 }
 
@@ -232,20 +223,31 @@ where
     }
 }
 
-impl<D0: Domain<Idx = usize>, V> IndexedContainer<D0::Idx> for MArrD1<D0, V> {
-    type Map<U> = MArrD1<D0, U>;
-
-    fn keys() -> impl Iterator<Item = D0::Idx> {
+impl<D0: Domain + Keys<D0::Idx>, V> Keys<D0::Idx> for MArrD1<D0, V> {
+    type Iter = D0::Iter;
+    fn keys() -> Self::Iter {
         D0::keys()
     }
+}
 
-    fn map<U, F: FnMut(D0::Idx) -> U>(f: F) -> Self::Map<U> {
-        Self::Map::<U>::from_iter(D0::keys().map(f))
-    }
+impl<D0: Domain + Keys<D0::Idx>, V> Indexes<D0::Idx> for MArrD1<D0, V> {
+    type Iter = <Self as Keys<D0::Idx>>::Iter;
 
-    fn from_fn<F: FnMut(D0::Idx) -> <Self as Index<D0::Idx>>::Output>(f: F) -> Self {
-        Self::from_iter(D0::keys().map(f))
+    fn indexes() -> Self::Iter {
+        D0::keys()
     }
+}
+
+impl<D0: Domain + Keys<D0::Idx>, V> FromFn<D0::Idx, V> for MArrD1<D0, V> {
+    fn from_fn<F: FnMut(D0::Idx) -> V>(f: F) -> Self {
+        Self::from_iter(Self::keys().map(f))
+    }
+}
+
+impl<D0: Domain<Idx = usize>, V> Container<D0::Idx> for MArrD1<D0, V> {}
+
+impl<D0: Domain<Idx = usize>, V> ContainerMap<D0::Idx> for MArrD1<D0, V> {
+    type Map<U> = MArrD1<D0, U>;
 }
 
 impl<D0, V> MArrD1<D0, V>
@@ -295,7 +297,6 @@ where
     }
 }
 
-#[derive(Clone)]
 pub struct MArrD2<D0: Domain, D1: Domain, V> {
     inner: MArrD1<D0, MArrD1<D1, V>>,
 }
@@ -303,6 +304,14 @@ pub struct MArrD2<D0: Domain, D1: Domain, V> {
 impl<D0: Domain, D1: Domain, V: fmt::Debug> fmt::Debug for MArrD2<D0, D1, V> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{:?}", self.inner)
+    }
+}
+
+impl<D0: Domain, D1: Domain, V: Clone> Clone for MArrD2<D0, D1, V> {
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+        }
     }
 }
 
@@ -319,14 +328,23 @@ where
 
 impl<D0, D1, V> Default for MArrD2<D0, D1, V>
 where
-    D0: Domain,
-    D1: Domain,
+    D0: Domain + Keys<D0::Idx>,
+    D1: Domain + Keys<D1::Idx>,
     V: Default,
 {
     fn default() -> Self {
-        Self {
-            inner: Default::default(),
-        }
+        Self::from_fn(|_| V::default())
+    }
+}
+
+impl<D0, D1, V> Zeros for MArrD2<D0, D1, V>
+where
+    D0: Domain + Keys<D0::Idx>,
+    D1: Domain + Keys<D1::Idx>,
+    V: Zero,
+{
+    fn zeros() -> Self {
+        Self::from_fn(|_| V::zero())
     }
 }
 
@@ -401,26 +419,52 @@ where
     }
 }
 
-impl<D0, D1, V> IndexedContainer<(D0::Idx, D1::Idx)> for MArrD2<D0, D1, V>
+impl<D0, D1, V> Keys<(D0::Idx, D1::Idx)> for MArrD2<D0, D1, V>
 where
-    D0: Domain<Idx = usize>,
-    D1: Domain<Idx = usize>,
+    D0: Domain + Keys<D0::Idx>,
+    D1: Domain + Keys<D1::Idx>,
 {
-    type Map<U> = MArrD2<D0, D1, U>;
-
-    fn keys() -> impl Iterator<Item = (D0::Idx, D1::Idx)> {
+    type Iter = itertools::Product<D0::Iter, D1::Iter>;
+    fn keys() -> Self::Iter {
         iproduct!(D0::keys(), D1::keys())
     }
+}
 
-    fn map<U, F: FnMut((D0::Idx, D1::Idx)) -> U>(f: F) -> Self::Map<U> {
-        Self::Map::<U>::from_iter(Self::keys().map(f))
+impl<D0, D1, V> Indexes<(D0::Idx, D1::Idx)> for MArrD2<D0, D1, V>
+where
+    D0: Domain + Keys<D0::Idx>,
+    D1: Domain + Keys<D1::Idx>,
+{
+    type Iter = <Self as Keys<(D0::Idx, D1::Idx)>>::Iter;
+
+    fn indexes() -> Self::Iter {
+        Self::keys()
     }
+}
 
-    fn from_fn<F: FnMut((D0::Idx, D1::Idx)) -> <Self as Index<(D0::Idx, D1::Idx)>>::Output>(
-        f: F,
-    ) -> Self {
+impl<D0, D1, V> FromFn<(D0::Idx, D1::Idx), V> for MArrD2<D0, D1, V>
+where
+    D0: Domain + Keys<D0::Idx>,
+    D1: Domain + Keys<D1::Idx>,
+{
+    fn from_fn<F: FnMut((D0::Idx, D1::Idx)) -> V>(f: F) -> Self {
         Self::from_iter(Self::keys().map(f))
     }
+}
+
+impl<D0, D1, V> Container<(D0::Idx, D1::Idx)> for MArrD2<D0, D1, V>
+where
+    D0: Domain + Keys<D0::Idx>,
+    D1: Domain + Keys<D1::Idx>,
+{
+}
+
+impl<D0, D1, V> ContainerMap<(D0::Idx, D1::Idx)> for MArrD2<D0, D1, V>
+where
+    D0: Domain + Keys<D0::Idx>,
+    D1: Domain + Keys<D1::Idx>,
+{
+    type Map<U> = MArrD2<D0, D1, U>;
 }
 
 impl<D0, D1, V> MArrD2<D0, D1, V>
@@ -450,7 +494,7 @@ where
         D0: Keys<D0::Idx>,
         D1: Keys<D1::Idx>,
     {
-        self.indexes().zip(self.values())
+        Self::indexes().zip(self.values())
     }
 
     #[inline]
@@ -459,17 +503,17 @@ where
         D0: Keys<D0::Idx>,
         D1: Keys<D1::Idx>,
     {
-        self.indexes().zip(self.values_mut())
+        Self::indexes().zip(self.values_mut())
     }
 
-    #[inline]
-    pub fn indexes(&self) -> impl Iterator<Item = (D0::Idx, D1::Idx)>
-    where
-        D0: Keys<D0::Idx>,
-        D1: Keys<D1::Idx>,
-    {
-        iproduct!(D0::keys(), D1::keys())
-    }
+    // #[inline]
+    // pub fn indexes(&self) -> impl Iterator<Item = (D0::Idx, D1::Idx)>
+    // where
+    //     D0: Keys<D0::Idx>,
+    //     D1: Keys<D1::Idx>,
+    // {
+    //     iproduct!(D0::keys(), D1::keys())
+    // }
 
     #[inline]
     pub fn values(&self) -> <&Self as IntoIterator>::IntoIter {
@@ -482,7 +526,6 @@ where
     }
 }
 
-#[derive(Clone)]
 pub struct MArrD3<D0: Domain, D1: Domain, D2: Domain, V> {
     inner: MArrD1<D0, MArrD2<D1, D2, V>>,
 }
@@ -490,6 +533,14 @@ pub struct MArrD3<D0: Domain, D1: Domain, D2: Domain, V> {
 impl<D0: Domain, D1: Domain, D2: Domain, V: fmt::Debug> fmt::Debug for MArrD3<D0, D1, D2, V> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{:?}", self.inner)
+    }
+}
+
+impl<D0: Domain, D1: Domain, D2: Domain, V: Clone> Clone for MArrD3<D0, D1, D2, V> {
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+        }
     }
 }
 
@@ -507,15 +558,25 @@ where
 
 impl<D0, D1, D2, V> Default for MArrD3<D0, D1, D2, V>
 where
-    D0: Domain,
-    D1: Domain,
-    D2: Domain,
+    D0: Domain + Keys<D0::Idx>,
+    D1: Domain + Keys<D1::Idx>,
+    D2: Domain + Keys<D2::Idx>,
     V: Default,
 {
     fn default() -> Self {
-        Self {
-            inner: Default::default(),
-        }
+        Self::from_fn(|_| V::default())
+    }
+}
+
+impl<D0, D1, D2, V> Zeros for MArrD3<D0, D1, D2, V>
+where
+    D0: Domain + Keys<D0::Idx>,
+    D1: Domain + Keys<D1::Idx>,
+    D2: Domain + Keys<D2::Idx>,
+    V: Zero,
+{
+    fn zeros() -> Self {
+        Self::from_fn(|_| V::zero())
     }
 }
 
@@ -608,29 +669,60 @@ where
     }
 }
 
-impl<D0, D1, D2, V> IndexedContainer<(D0::Idx, D1::Idx, D2::Idx)> for MArrD3<D0, D1, D2, V>
+impl<D0, D1, D2, V> Keys<(D0::Idx, D1::Idx, D2::Idx)> for MArrD3<D0, D1, D2, V>
 where
-    D0: Domain<Idx = usize>,
-    D1: Domain<Idx = usize>,
-    D2: Domain<Idx = usize>,
+    D0: Domain + Keys<D0::Idx>,
+    D1: Domain + Keys<D1::Idx>,
+    D2: Domain + Keys<D2::Idx>,
 {
-    type Map<U> = MArrD3<D0, D1, D2, U>;
-
-    fn keys() -> impl Iterator<Item = (D0::Idx, D1::Idx, D2::Idx)> {
+    type Iter = itertools::ConsTuples<
+        itertools::Product<itertools::Product<D0::Iter, D1::Iter>, D2::Iter>,
+        ((D0::Idx, D1::Idx), D2::Idx),
+    >;
+    fn keys() -> Self::Iter {
         iproduct!(D0::keys(), D1::keys(), D2::keys())
     }
+}
 
-    fn map<U, F: FnMut((D0::Idx, D1::Idx, D2::Idx)) -> U>(f: F) -> Self::Map<U> {
-        Self::Map::<U>::from_iter(Self::keys().map(f))
+impl<D0, D1, D2, V> Indexes<(D0::Idx, D1::Idx, D2::Idx)> for MArrD3<D0, D1, D2, V>
+where
+    D0: Domain + Keys<D0::Idx>,
+    D1: Domain + Keys<D1::Idx>,
+    D2: Domain + Keys<D2::Idx>,
+{
+    type Iter = <Self as Keys<(D0::Idx, D1::Idx, D2::Idx)>>::Iter;
+
+    fn indexes() -> Self::Iter {
+        Self::keys()
     }
+}
 
-    fn from_fn<
-        F: FnMut((D0::Idx, D1::Idx, D2::Idx)) -> <Self as Index<(D0::Idx, D1::Idx, D2::Idx)>>::Output,
-    >(
-        f: F,
-    ) -> Self {
+impl<D0, D1, D2, V> FromFn<(D0::Idx, D1::Idx, D2::Idx), V> for MArrD3<D0, D1, D2, V>
+where
+    D0: Domain + Keys<D0::Idx>,
+    D1: Domain + Keys<D1::Idx>,
+    D2: Domain + Keys<D2::Idx>,
+{
+    fn from_fn<F: FnMut((D0::Idx, D1::Idx, D2::Idx)) -> V>(f: F) -> Self {
         Self::from_iter(Self::keys().map(f))
     }
+}
+
+impl<D0, D1, D2, V> Container<(D0::Idx, D1::Idx, D2::Idx)> for MArrD3<D0, D1, D2, V>
+where
+    D0: Domain + Keys<D0::Idx>,
+    D1: Domain + Keys<D1::Idx>,
+    D2: Domain + Keys<D2::Idx>,
+{
+}
+
+impl<D0, D1, D2, V> ContainerMap<(D0::Idx, D1::Idx, D2::Idx)> for MArrD3<D0, D1, D2, V>
+where
+    D0: Domain + Keys<D0::Idx>,
+    D1: Domain + Keys<D1::Idx>,
+    D2: Domain + Keys<D2::Idx>,
+{
+    type Map<U> = MArrD3<D0, D1, D2, U>;
 }
 
 impl<D0, D1, D2, V> MArrD3<D0, D1, D2, V>
@@ -749,10 +841,34 @@ where
     iproduct!(w0.values(), w1.values(), w2.values()).map(|(&v0, &v1, &v2)| v0 * v1 * v2)
 }
 
+#[macro_export]
+macro_rules! marr_d1 {
+    ($d0:tt;$e:expr) => {
+        $crate::multi_array::labeled::MArrD1::<$d0, _>::from_iter($e)
+    };
+    [$($e:expr),*$(,)?] => {
+        $crate::multi_array::labeled::MArrD1::<_, _>::from_iter([$($e,)*])
+    };
+}
+
+#[macro_export]
+macro_rules! marr_d2 {
+    ($d0:ident,$d1:ident;$e:expr) => {
+        $crate::multi_array::labeled::MArrD2::<$d0, $d1, _>::from_multi_iter($e)
+    };
+}
+
+#[macro_export]
+macro_rules! marr_d3 {
+    ($d0:ident,$d1:ident,$d2:ident;$e:expr) => {
+        $crate::multi_array::labeled::MArrD3::<$d0, $d1, $d2, _>::from_multi_iter($e)
+    };
+}
+
 #[cfg(test)]
 mod tests {
     use crate::multi_array::labeled::MArrD3;
-    use crate::ops::{Product2, Product3};
+    use crate::ops::{Indexes, Product2, Product3, Zeros};
 
     use super::{Keys, MArrD2};
 
@@ -777,6 +893,19 @@ mod tests {
     }
 
     #[test]
+    fn test_clone() {
+        let ma = MArrD1::<X, i32>::zeros();
+        let ma2 = ma.clone();
+        assert_eq!(ma, ma2);
+        let ma = MArrD2::<X, Y, i32>::zeros();
+        let ma2 = ma.clone();
+        assert_eq!(ma, ma2);
+        let ma = MArrD3::<X, Y, Z, i32>::zeros();
+        let ma2 = ma.clone();
+        assert_eq!(ma, ma2);
+    }
+
+    #[test]
     fn test_keys() {
         let mut keys = X::keys();
         for i in 0..X::LEN {
@@ -784,6 +913,21 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_macro() {
+        let ma = marr_d1!(X; [0, 1]);
+        for i in ma.indexes() {
+            assert_eq!(ma[i], i);
+        }
+        let ma = marr_d2!(X, Y; [[0, 1, 2], [3, 4, 5]]);
+        for (i, j) in MArrD2::<X, Y, usize>::indexes() {
+            assert_eq!(ma[(i, j)], i * Y::LEN + j);
+        }
+        let ma = marr_d3!(X, Y, Z; [[[0, 1], [2, 3], [4, 5]], [[6, 7], [8, 9], [10, 11]]]);
+        for (i, j, k) in ma.indexes() {
+            assert_eq!(ma[(i, j, k)], i * Y::LEN * X::LEN + j * Z::LEN + k);
+        }
+    }
     #[test]
     fn test_from_iter() {
         let ma = MArrD2::<X, Y, _>::from_iter(0..6);
@@ -811,7 +955,7 @@ mod tests {
             assert_eq!(ma[i], i);
         }
         let ma = MArrD2::<X, Y, _>::from_multi_iter([[0, 1, 2], [3, 4, 5]]);
-        for (i, j) in ma.indexes() {
+        for (i, j) in MArrD2::<X, Y, usize>::indexes() {
             assert_eq!(ma[(i, j)], i * Y::LEN + j);
         }
         let ma = MArrD3::<X, Y, Z, _>::from_multi_iter([
@@ -863,7 +1007,7 @@ mod tests {
 
     #[test]
     fn test_values_mut() {
-        let mut ma = MArrD1::<X, _>::default();
+        let mut ma = MArrD1::<X, _>::zeros();
         for (i, v) in ma.values_mut().enumerate() {
             *v = i;
         }
@@ -871,15 +1015,15 @@ mod tests {
             assert_eq!(ma[i], i);
         }
 
-        let mut ma = MArrD2::<X, Y, _>::default();
+        let mut ma = MArrD2::<X, Y, _>::zeros();
         for (i, v) in ma.values_mut().enumerate() {
             *v = i;
         }
-        for (i, j) in ma.indexes() {
+        for (i, j) in MArrD2::<X, Y, usize>::indexes() {
             assert_eq!(ma[(i, j)], i * Y::LEN + j);
         }
 
-        let mut ma = MArrD3::<X, Y, Z, _>::default();
+        let mut ma = MArrD3::<X, Y, Z, _>::zeros();
         for (i, v) in ma.values_mut().enumerate() {
             *v = i;
         }
@@ -890,7 +1034,7 @@ mod tests {
 
     #[test]
     fn test_iter_mut() {
-        let mut ma = MArrD1::<X, _>::default();
+        let mut ma = MArrD1::<X, _>::zeros();
         for (i, v) in ma.iter_mut() {
             *v = i;
         }
@@ -898,16 +1042,16 @@ mod tests {
             assert_eq!(ma[i], i);
         }
 
-        let mut ma = MArrD2::<X, Y, _>::default();
+        let mut ma = MArrD2::<X, Y, _>::zeros();
         for ((i, j), v) in ma.iter_mut() {
             *v = i * Y::LEN + j;
         }
         println!("{ma:?}");
-        for (i, j) in ma.indexes() {
+        for (i, j) in MArrD2::<X, Y, usize>::indexes() {
             assert_eq!(ma[(i, j)], i * Y::LEN + j);
         }
 
-        let mut ma = MArrD3::<X, Y, Z, _>::default();
+        let mut ma = MArrD3::<X, Y, Z, _>::zeros();
         for ((i, j, k), v) in ma.iter_mut() {
             *v = i * Y::LEN * X::LEN + j * Z::LEN + k;
         }
@@ -988,19 +1132,19 @@ mod tests {
 
     #[test]
     fn test_default() {
-        let ma = MArrD1::<X, i32>::default();
+        let ma = MArrD1::<X, i32>::zeros();
         for i in X::keys() {
             assert_eq!(ma[i], 0);
         }
 
-        let ma = MArrD2::<X, Y, i32>::default();
+        let ma = MArrD2::<X, Y, i32>::zeros();
         for i in X::keys() {
             for j in Y::keys() {
                 assert_eq!(ma[(i, j)], 0);
             }
         }
 
-        let ma = MArrD3::<X, Y, Z, i32>::default();
+        let ma = MArrD3::<X, Y, Z, i32>::zeros();
         for i in X::keys() {
             for j in Y::keys() {
                 for k in Z::keys() {
@@ -1012,7 +1156,7 @@ mod tests {
 
     #[test]
     fn test_index_mut() {
-        let mut ma = MArrD1::<X, _>::default();
+        let mut ma = MArrD1::<X, _>::zeros();
         for i in X::keys() {
             ma[i] = i;
         }
@@ -1020,7 +1164,7 @@ mod tests {
             assert_eq!(ma[i], i);
         }
 
-        let mut ma = MArrD2::<X, Y, _>::default();
+        let mut ma = MArrD2::<X, Y, _>::zeros();
         for i in X::keys() {
             for j in Y::keys() {
                 ma[(i, j)] = i * Y::LEN + j;
@@ -1032,7 +1176,7 @@ mod tests {
             }
         }
 
-        let mut ma = MArrD3::<X, Y, Z, _>::default();
+        let mut ma = MArrD3::<X, Y, Z, _>::zeros();
         for i in X::keys() {
             for j in Y::keys() {
                 for k in Z::keys() {
