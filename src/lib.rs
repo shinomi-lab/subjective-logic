@@ -5,6 +5,7 @@ pub mod approx_ext;
 pub mod bi;
 pub mod convert;
 pub mod errors;
+pub mod iter;
 pub mod mul;
 pub mod multi_array;
 pub mod ops;

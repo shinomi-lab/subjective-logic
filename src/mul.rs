@@ -13,9 +13,10 @@ use std::{
 use crate::{
     approx_ext::{is_one, is_zero},
     errors::{check_is_one, check_unit_interval, InvalidValueError},
+    iter::{Container, ContainerMap, FromFn},
     ops::{
-        Abduction, Container, ContainerMap, Deduction, Discount, FromFn, Fuse, FuseAssign, FuseOp,
-        Indexes, MaxUncertainty, Product2, Product3, Projection, Zeros,
+        Abduction, Deduction, Discount, Fuse, FuseAssign, FuseOp, Indexes, MaxUncertainty,
+        Product2, Product3, Projection, Zeros,
     },
 };
 
@@ -331,10 +332,7 @@ where
 
     fn max_uncertainty(&self, a: &T) -> V {
         let p = self.projection(a);
-        a.zip(&p)
-            .map(|(&ai, &pi)| pi / ai)
-            .reduce(<V>::min)
-            .unwrap()
+        T::indexes().map(|i| p[i] / a[i]).reduce(<V>::min).unwrap()
     }
 
     fn uncertainty_maximized(&self, a: &T) -> Self::Output {
@@ -396,7 +394,6 @@ where
 {
     let mut sum_b = V::zero();
     for (i, &bi) in b.iter_with() {
-        // let bi = b[i.clone()];
         check_unit_interval(bi, format!("b[{i:?}]"))?;
         sum_b += bi;
     }
@@ -685,14 +682,13 @@ where
     Y: Copy,
     V: Float + Sum + UlpsEq + AddAssign + DivAssign,
 {
-    if conds.iter().all(|cond| cond.into().is_vacuous()) {
+    if Cond::indexes().all(|x| conds[x].into().is_vacuous()) {
         return None;
     }
     let mut sum_a = V::zero();
     let mut ay = U::from_fn(|y| {
-        let a = conds
-            .zip(ax)
-            .map(|(cond, &ax)| ax * cond.into().belief[y.clone()])
+        let a = Cond::indexes()
+            .map(|x| ax[x] * conds[x].into().belief[y.clone()])
             .sum::<V>();
         sum_a += a;
         a
@@ -818,7 +814,7 @@ where
                 .reduce(<V>::min)
                 .unwrap()
         });
-        let u_yx_sum = (&u_yx).iter().cloned().sum::<V>();
+        let u_yx_sum = T::indexes().map(|x| u_yx[x]).sum::<V>();
         let weights_yx = if u_yx_sum == V::zero() {
             T::from_fn(|_| V::zero())
         } else {
@@ -838,8 +834,7 @@ where
                 weights_yx[x] * u_yx[x] / u
             }
         });
-        let wprop_u_yx = weighted_u_yx.iter().cloned().sum::<V>();
-        // T::indexes().map(|x| weighted_u_yx[x]).sum();
+        let wprop_u_yx = T::indexes().map(|x| weighted_u_yx[x]).sum::<V>();
         U::map(|y| {
             let u = max_u_xy[y] * (wprop_u_yx + irrelevance_yx[y] - wprop_u_yx * irrelevance_yx[y]);
             let b = T::from_fn(|x| p_xy[y][x] - u * ax[x]);

@@ -8,11 +8,24 @@ use std::{
 use itertools::iproduct;
 use num_traits::Zero;
 
-use crate::ops::{Container, ContainerMap, FromFn, Indexes, Product2, Product3, Zeros};
+use crate::{
+    iter::{Container, ContainerMap, FromFn},
+    ops::{Indexes, Product2, Product3, Zeros},
+};
 
 pub trait Domain {
-    const LEN: Self::Idx;
     type Idx: Into<usize> + Clone + fmt::Debug;
+    const LEN: usize;
+}
+
+#[macro_export]
+macro_rules! impl_domain {
+    ($s:ident, $l:literal) => {
+        impl Domain for $s {
+            const LEN: usize = $l;
+            type Idx = usize;
+        }
+    };
 }
 
 impl<D: Domain<Idx = usize>> Keys<usize> for D {
@@ -255,7 +268,7 @@ where
     D0: Domain,
 {
     pub fn new(inner: Vec<V>) -> Self {
-        assert!(inner.len() == D0::LEN.into());
+        assert!(inner.len() == D0::LEN);
         Self {
             _marker: PhantomData,
             inner,
@@ -263,36 +276,12 @@ where
     }
 
     #[inline]
-    pub fn iter(&self) -> impl Iterator<Item = (D0::Idx, &'_ V)>
-    where
-        D0: Keys<D0::Idx>,
-    {
-        self.indexes().zip(self.values())
-    }
-
-    #[inline]
-    pub fn iter_mut(&mut self) -> impl Iterator<Item = (D0::Idx, &'_ mut V)>
-    where
-        D0: Keys<D0::Idx>,
-    {
-        self.indexes().zip(self.values_mut())
-    }
-
-    #[inline]
-    pub fn indexes(&self) -> impl Iterator<Item = D0::Idx>
-    where
-        D0: Keys<D0::Idx>,
-    {
-        D0::keys()
-    }
-
-    #[inline]
-    pub fn values(&self) -> <&Self as IntoIterator>::IntoIter {
+    pub fn iter(&self) -> <&Self as IntoIterator>::IntoIter {
         self.into_iter()
     }
 
     #[inline]
-    pub fn values_mut(&mut self) -> <&mut Self as IntoIterator>::IntoIter {
+    pub fn iter_mut(&mut self) -> <&mut Self as IntoIterator>::IntoIter {
         self.into_iter()
     }
 }
@@ -410,10 +399,10 @@ where
     D1: Domain,
 {
     fn from_iter<T: IntoIterator<Item = V>>(iter: T) -> Self {
-        let mut inner = Vec::with_capacity(D0::LEN.into());
+        let mut inner = Vec::with_capacity(D0::LEN);
         let mut v = Vec::from_iter(iter);
-        for _ in 0..D0::LEN.into() {
-            inner.push(MArrD1::<D1, _>::from_iter(v.drain(0..D1::LEN.into())));
+        for _ in 0..D0::LEN {
+            inner.push(MArrD1::<D1, _>::from_iter(v.drain(0..D1::LEN)));
         }
         Self::new(inner)
     }
@@ -489,39 +478,12 @@ where
     }
 
     #[inline]
-    pub fn iter(&self) -> impl Iterator<Item = ((D0::Idx, D1::Idx), &'_ V)>
-    where
-        D0: Keys<D0::Idx>,
-        D1: Keys<D1::Idx>,
-    {
-        Self::indexes().zip(self.values())
-    }
-
-    #[inline]
-    pub fn iter_mut(&mut self) -> impl Iterator<Item = ((D0::Idx, D1::Idx), &'_ mut V)>
-    where
-        D0: Keys<D0::Idx>,
-        D1: Keys<D1::Idx>,
-    {
-        Self::indexes().zip(self.values_mut())
-    }
-
-    // #[inline]
-    // pub fn indexes(&self) -> impl Iterator<Item = (D0::Idx, D1::Idx)>
-    // where
-    //     D0: Keys<D0::Idx>,
-    //     D1: Keys<D1::Idx>,
-    // {
-    //     iproduct!(D0::keys(), D1::keys())
-    // }
-
-    #[inline]
-    pub fn values(&self) -> <&Self as IntoIterator>::IntoIter {
+    pub fn iter(&self) -> <&Self as IntoIterator>::IntoIter {
         self.into_iter()
     }
 
     #[inline]
-    pub fn values_mut(&mut self) -> <&mut Self as IntoIterator>::IntoIter {
+    pub fn iter_mut(&mut self) -> <&mut Self as IntoIterator>::IntoIter {
         self.into_iter()
     }
 }
@@ -656,12 +618,12 @@ where
     D2: Domain,
 {
     fn from_iter<T: IntoIterator<Item = V>>(iter: T) -> Self {
-        let mut arr = Vec::with_capacity(D0::LEN.into());
+        let mut arr = Vec::with_capacity(D0::LEN);
         let mut v = Vec::from_iter(iter);
-        for _ in 0..D0::LEN.into() {
-            let mut arr2 = Vec::with_capacity(D1::LEN.into());
-            for _ in 0..D1::LEN.into() {
-                arr2.push(MArrD1::<D2, _>::from_iter(v.drain(0..D2::LEN.into())));
+        for _ in 0..D0::LEN {
+            let mut arr2 = Vec::with_capacity(D1::LEN);
+            for _ in 0..D1::LEN {
+                arr2.push(MArrD1::<D2, _>::from_iter(v.drain(0..D2::LEN)));
             }
             arr.push(MArrD2::<D1, D2, _>::new(arr2));
         }
@@ -749,42 +711,12 @@ where
     }
 
     #[inline]
-    pub fn iter(&self) -> impl Iterator<Item = ((D0::Idx, D1::Idx, D2::Idx), &'_ V)>
-    where
-        D0: Keys<D0::Idx>,
-        D1: Keys<D1::Idx>,
-        D2: Keys<D2::Idx>,
-    {
-        self.indexes().zip(self.values())
-    }
-
-    #[inline]
-    pub fn iter_mut(&mut self) -> impl Iterator<Item = ((D0::Idx, D1::Idx, D2::Idx), &'_ mut V)>
-    where
-        D0: Keys<D0::Idx>,
-        D1: Keys<D1::Idx>,
-        D2: Keys<D2::Idx>,
-    {
-        self.indexes().zip(self.values_mut())
-    }
-
-    #[inline]
-    pub fn indexes(&self) -> impl Iterator<Item = (D0::Idx, D1::Idx, D2::Idx)>
-    where
-        D0: Keys<D0::Idx>,
-        D1: Keys<D1::Idx>,
-        D2: Keys<D2::Idx>,
-    {
-        iproduct!(D0::keys(), D1::keys(), D2::keys())
-    }
-
-    #[inline]
-    pub fn values(&self) -> <&Self as IntoIterator>::IntoIter {
+    pub fn iter(&self) -> <&Self as IntoIterator>::IntoIter {
         self.into_iter()
     }
 
     #[inline]
-    pub fn values_mut(&mut self) -> <&mut Self as IntoIterator>::IntoIter {
+    pub fn iter_mut(&mut self) -> <&mut Self as IntoIterator>::IntoIter {
         self.into_iter()
     }
 }
@@ -810,7 +742,7 @@ where
     D1: Domain,
     V: Mul<Output = V> + Copy,
 {
-    iproduct!(w0.values(), w1.values()).map(|(&v0, &v1)| v0 * v1)
+    iproduct!(w0, w1).map(|(&v0, &v1)| v0 * v1)
 }
 
 impl<D0, D1, D2, V> Product3<&MArrD1<D0, V>, &MArrD1<D1, V>, &MArrD1<D2, V>>
@@ -838,7 +770,7 @@ where
     D2: Domain,
     V: Mul<Output = V> + Copy,
 {
-    iproduct!(w0.values(), w1.values(), w2.values()).map(|(&v0, &v1, &v2)| v0 * v1 * v2)
+    iproduct!(w0, w1, w2).map(|(&v0, &v1, &v2)| v0 * v1 * v2)
 }
 
 #[macro_export]
@@ -867,6 +799,7 @@ macro_rules! marr_d3 {
 
 #[cfg(test)]
 mod tests {
+    use crate::iter::Container;
     use crate::multi_array::labeled::MArrD3;
     use crate::ops::{Indexes, Product2, Product3, Zeros};
 
@@ -875,22 +808,13 @@ mod tests {
     use super::{Domain, MArrD1};
 
     struct X;
-    impl Domain for X {
-        const LEN: usize = 2;
-        type Idx = usize;
-    }
+    impl_domain!(X, 2);
 
     struct Y;
-    impl Domain for Y {
-        const LEN: usize = 3;
-        type Idx = usize;
-    }
+    impl_domain!(Y, 3);
 
     struct Z;
-    impl Domain for Z {
-        const LEN: usize = 2;
-        type Idx = usize;
-    }
+    impl_domain!(Z, 2);
 
     #[test]
     fn test_clone() {
@@ -916,7 +840,7 @@ mod tests {
     #[test]
     fn test_macro() {
         let ma = marr_d1!(X; [0, 1]);
-        for i in ma.indexes() {
+        for i in X::keys() {
             assert_eq!(ma[i], i);
         }
         let ma = marr_d2!(X, Y; [[0, 1, 2], [3, 4, 5]]);
@@ -924,21 +848,21 @@ mod tests {
             assert_eq!(ma[(i, j)], i * Y::LEN + j);
         }
         let ma = marr_d3!(X, Y, Z; [[[0, 1], [2, 3], [4, 5]], [[6, 7], [8, 9], [10, 11]]]);
-        for (i, j, k) in ma.indexes() {
+        for (i, j, k) in MArrD3::<X, Y, Z, usize>::indexes() {
             assert_eq!(ma[(i, j, k)], i * Y::LEN * X::LEN + j * Z::LEN + k);
         }
     }
     #[test]
     fn test_from_iter() {
         let ma = MArrD2::<X, Y, _>::from_iter(0..6);
-        for (i, v) in ma.values().enumerate() {
+        for (i, v) in ma.into_iter().enumerate() {
             assert_eq!(i, *v);
         }
         let ma2 = MArrD2::<X, Y, _>::from_multi_iter([[0, 1, 2], [3, 4, 5]]);
         assert_eq!(ma, ma2);
 
         let ma = MArrD3::<X, Y, Z, _>::from_iter(0..12);
-        for (i, v) in ma.values().enumerate() {
+        for (i, v) in ma.into_iter().enumerate() {
             assert_eq!(i, *v);
         }
         let ma2 = MArrD3::<X, Y, Z, _>::from_multi_iter([
@@ -951,7 +875,7 @@ mod tests {
     #[test]
     fn test_indexes() {
         let ma = MArrD1::<X, _>::from_iter([0, 1]);
-        for i in ma.indexes() {
+        for i in X::keys() {
             assert_eq!(ma[i], i);
         }
         let ma = MArrD2::<X, Y, _>::from_multi_iter([[0, 1, 2], [3, 4, 5]]);
@@ -962,7 +886,7 @@ mod tests {
             [[0, 1], [2, 3], [4, 5]],
             [[6, 7], [8, 9], [10, 11]],
         ]);
-        for (i, j, k) in ma.indexes() {
+        for (i, j, k) in MArrD3::<X, Y, Z, usize>::indexes() {
             assert_eq!(ma[(i, j, k)], i * Y::LEN * X::LEN + j * Z::LEN + k);
         }
     }
@@ -970,92 +894,64 @@ mod tests {
     #[test]
     fn test_values() {
         let ma = MArrD1::<X, _>::from_iter([0, 1]);
-        for (i, v) in ma.values().enumerate() {
+        for (i, v) in ma.into_iter().enumerate() {
             assert_eq!(*v, i);
         }
         let ma = MArrD2::<X, Y, _>::from_multi_iter([[0, 1, 2], [3, 4, 5]]);
-        for (i, v) in ma.values().enumerate() {
+        for (i, v) in ma.into_iter().enumerate() {
             assert_eq!(*v, i);
         }
         let ma = MArrD3::<X, Y, Z, _>::from_multi_iter([
             [[0, 1], [2, 3], [4, 5]],
             [[6, 7], [8, 9], [10, 11]],
         ]);
-        for (i, v) in ma.values().enumerate() {
+        for (i, v) in ma.into_iter().enumerate() {
             assert_eq!(*v, i);
         }
     }
 
     #[test]
-    fn test_iter() {
+    fn test_iter_with() {
         let ma = MArrD1::<X, _>::from_iter([0, 1]);
-        for (i, v) in ma.iter() {
+        for (i, v) in ma.iter_with() {
             assert_eq!(*v, i);
         }
         let ma = MArrD2::<X, Y, _>::from_multi_iter([[0, 1, 2], [3, 4, 5]]);
-        for ((i, j), v) in ma.iter() {
+        for ((i, j), v) in ma.iter_with() {
             assert_eq!(*v, i * Y::LEN + j);
         }
         let ma = MArrD3::<X, Y, Z, _>::from_multi_iter([
             [[0, 1], [2, 3], [4, 5]],
             [[6, 7], [8, 9], [10, 11]],
         ]);
-        for ((i, j, k), v) in ma.iter() {
+        for ((i, j, k), v) in ma.iter_with() {
             assert_eq!(*v, i * Y::LEN * X::LEN + j * Z::LEN + k);
-        }
-    }
-
-    #[test]
-    fn test_values_mut() {
-        let mut ma = MArrD1::<X, _>::zeros();
-        for (i, v) in ma.values_mut().enumerate() {
-            *v = i;
-        }
-        for i in ma.indexes() {
-            assert_eq!(ma[i], i);
-        }
-
-        let mut ma = MArrD2::<X, Y, _>::zeros();
-        for (i, v) in ma.values_mut().enumerate() {
-            *v = i;
-        }
-        for (i, j) in MArrD2::<X, Y, usize>::indexes() {
-            assert_eq!(ma[(i, j)], i * Y::LEN + j);
-        }
-
-        let mut ma = MArrD3::<X, Y, Z, _>::zeros();
-        for (i, v) in ma.values_mut().enumerate() {
-            *v = i;
-        }
-        for (i, j, k) in ma.indexes() {
-            assert_eq!(ma[(i, j, k)], i * Y::LEN * X::LEN + j * Z::LEN + k);
         }
     }
 
     #[test]
     fn test_iter_mut() {
         let mut ma = MArrD1::<X, _>::zeros();
-        for (i, v) in ma.iter_mut() {
+        for (i, v) in ma.iter_mut().enumerate() {
             *v = i;
         }
-        for i in ma.indexes() {
+        for i in MArrD1::<X, usize>::indexes() {
             assert_eq!(ma[i], i);
         }
 
         let mut ma = MArrD2::<X, Y, _>::zeros();
-        for ((i, j), v) in ma.iter_mut() {
-            *v = i * Y::LEN + j;
+        for (i, v) in ma.iter_mut().enumerate() {
+            *v = i;
         }
-        println!("{ma:?}");
         for (i, j) in MArrD2::<X, Y, usize>::indexes() {
             assert_eq!(ma[(i, j)], i * Y::LEN + j);
         }
 
         let mut ma = MArrD3::<X, Y, Z, _>::zeros();
-        for ((i, j, k), v) in ma.iter_mut() {
-            *v = i * Y::LEN * X::LEN + j * Z::LEN + k;
+        for (i, v) in ma.iter_mut().enumerate() {
+            *v = i;
         }
-        for (i, j, k) in ma.indexes() {
+        for (i, j, k) in MArrD3::<X, Y, Z, usize>::indexes() {
             assert_eq!(ma[(i, j, k)], i * Y::LEN * X::LEN + j * Z::LEN + k);
         }
     }
@@ -1200,12 +1096,12 @@ mod tests {
         let mz = MArrD1::<Z, _>::from_iter([6, 7]);
 
         let mxy = MArrD2::product2(&mx, &my);
-        for ((i, j), xy) in mxy.iter() {
+        for ((i, j), xy) in mxy.iter_with() {
             assert_eq!(mx[i] * my[j], *xy);
         }
 
         let mxyz = MArrD3::product3(&mx, &my, &mz);
-        for ((i, j, k), xyz) in mxyz.iter() {
+        for ((i, j, k), xyz) in mxyz.iter_with() {
             assert_eq!(mx[i] * my[j] * mz[k], *xyz);
         }
     }

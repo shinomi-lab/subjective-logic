@@ -1,5 +1,3 @@
-use std::ops::Index;
-
 pub trait Projection<Idx, T> {
     /// Computes the probability projection of `self`.
     fn projection(&self) -> T;
@@ -79,47 +77,6 @@ pub trait Indexes<K> {
     type Iter: Iterator<Item = K>;
 
     fn indexes() -> Self::Iter;
-}
-
-pub trait Container<K>: Indexes<K> + Index<K> {
-    fn iter<'a>(&'a self) -> impl Iterator<Item = &'a Self::Output>
-    where
-        Self::Output: 'a,
-    {
-        Self::indexes().map(|i| &self[i])
-    }
-
-    fn iter_with<'a>(&'a self) -> impl Iterator<Item = (K, &'a Self::Output)>
-    where
-        K: Clone,
-        Self::Output: 'a,
-    {
-        Self::indexes().map(|i| (i.clone(), &self[i]))
-    }
-
-    fn zip<'a, T: Index<K>>(
-        &'a self,
-        other: &'a T,
-    ) -> impl Iterator<Item = (&'a Self::Output, &'a T::Output)>
-    where
-        K: Clone,
-        Self::Output: 'a,
-        T::Output: 'a,
-    {
-        Self::indexes().map(|i| (&self[i.clone()], &other[i]))
-    }
-}
-
-pub trait ContainerMap<K> {
-    type Map<U>: FromFn<K, U> + Index<K, Output = U>;
-
-    fn map<U, F: FnMut(K) -> U>(f: F) -> Self::Map<U> {
-        Self::Map::from_fn(f)
-    }
-}
-
-pub trait FromFn<K, V> {
-    fn from_fn<F: FnMut(K) -> V>(f: F) -> Self;
 }
 
 pub trait Zeros {

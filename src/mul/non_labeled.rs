@@ -8,10 +8,11 @@ use approx::UlpsEq;
 use num_traits::{Float, Zero};
 
 use super::{check_base_rate, Opinion, OpinionRef, Simplex};
-use crate::ops::{Container, ContainerMap, FromFn, Indexes, Product2, Product3, Projection, Zeros};
 use crate::{
     errors::InvalidValueError,
+    iter::{Container, ContainerMap, FromFn},
     multi_array::non_labeled::{MArr2, MArr3},
+    ops::{Indexes, Product2, Product3, Projection, Zeros},
 };
 
 impl<V: Zero, const N: usize> Zeros for [V; N] {

@@ -6,7 +6,10 @@ use std::{
 
 use num_traits::Zero;
 
-use crate::ops::{Container, ContainerMap, FromFn, Indexes, Product2, Product3, Zeros};
+use crate::{
+    iter::{Container, ContainerMap, FromFn},
+    ops::{Indexes, Product2, Product3, Zeros},
+};
 
 #[derive(Clone)]
 pub struct MultiRange<const N: usize> {
@@ -405,9 +408,9 @@ impl<V: Mul<Output = V> + Copy, const D0: usize, const D1: usize, const D2: usiz
 #[cfg(test)]
 mod tests {
     use crate::{
+        iter::FromFn,
         mul::non_labeled::Simplex1d,
         multi_array::non_labeled::{MArr2, MArr3, MultiRange},
-        ops::FromFn,
     };
 
     use super::MArr1;

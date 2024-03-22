@@ -53,11 +53,11 @@ where
         let p_iter = product2_iter(&p0, &p1);
         let b_iter = product2_iter(&w0.simplex.belief, &w1.simplex.belief);
         let a = MArrD2::product2(&w0.base_rate, &w1.base_rate);
-        let u = izip!(p_iter.clone(), b_iter, a.values())
+        let u = izip!(p_iter.clone(), b_iter, &a)
             .map(|(p, b, &a)| (p - b) / a)
             .reduce(V::min)
             .unwrap();
-        let b = MArrD2::<D0, D1, V>::from_iter(p_iter.zip(a.values()).map(|(p, &a)| p - a * u));
+        let b = MArrD2::<D0, D1, V>::from_iter(p_iter.zip(&a).map(|(p, &a)| p - a * u));
         Opinion::new(b, u, a)
     }
 }
@@ -78,11 +78,11 @@ where
         let p_iter = product3_iter(&p0, &p1, &p2);
         let b_iter = product3_iter(&w0.simplex.belief, &w1.simplex.belief, &w2.simplex.belief);
         let a = MArrD3::product3(&w0.base_rate, &w1.base_rate, &w2.base_rate);
-        let u = izip!(p_iter.clone(), b_iter, a.values())
+        let u = izip!(p_iter.clone(), b_iter, &a)
             .map(|(p, b, &a)| (p - b) / a)
             .reduce(V::min)
             .unwrap();
-        let b = MArrD3::<D0, D1, D2, _>::from_iter(p_iter.zip(a.values()).map(|(p, &a)| p - a * u));
+        let b = MArrD3::<D0, D1, D2, _>::from_iter(p_iter.zip(&a).map(|(p, &a)| p - a * u));
         Opinion::new(b, u, a)
     }
 }
@@ -95,12 +95,13 @@ mod tests {
 
     use super::{OpinionD1, OpinionD2, OpinionRefD1, SimplexD1};
     use crate::{
+        iter::Container,
         marr_d1, marr_d2,
         mul::{check_base_rate, mbr},
         multi_array::labeled::{Domain, MArrD1, MArrD2},
         ops::{
-            Abduction, Container, Deduction, Discount, Fuse, FuseAssign, FuseOp, MaxUncertainty,
-            Product2, Projection,
+            Abduction, Deduction, Discount, Fuse, FuseAssign, FuseOp, MaxUncertainty, Product2,
+            Projection,
         },
     };
 
@@ -391,7 +392,7 @@ mod tests {
                     nround![$ft, 3](w.u()),
                     18.0 - w
                         .b()
-                        .values()
+                        .iter()
                         .cloned()
                         .map(nfract![$ft, 3])
                         .sum::<$ft>()
