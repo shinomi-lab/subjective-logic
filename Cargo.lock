@@ -89,7 +89,7 @@ dependencies = [
 
 [[package]]
 name = "subjective-logic"
-version = "0.8.4-rc2"
+version = "0.8.4-rc3"
 dependencies = [
  "approx",
  "itertools",

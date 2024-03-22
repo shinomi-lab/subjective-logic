@@ -785,15 +785,21 @@ macro_rules! marr_d1 {
 
 #[macro_export]
 macro_rules! marr_d2 {
-    ($d0:ident,$d1:ident;$e:expr) => {
+    ($d0:tt,$d1:tt;$e:expr) => {
         $crate::multi_array::labeled::MArrD2::<$d0, $d1, _>::from_multi_iter($e)
+    };
+    [$($e:tt),*$(,)?] => {
+        $crate::multi_array::labeled::MArrD2::<_, _, _>::from_multi_iter([$($e,)*])
     };
 }
 
 #[macro_export]
 macro_rules! marr_d3 {
-    ($d0:ident,$d1:ident,$d2:ident;$e:expr) => {
+    ($d0:tt,$d1:tt,$d2:tt;$e:expr) => {
         $crate::multi_array::labeled::MArrD3::<$d0, $d1, $d2, _>::from_multi_iter($e)
+    };
+    [$($e:tt),*$(,)?] => {
+        $crate::multi_array::labeled::MArrD3::<_, _, _, _>::from_multi_iter([$($e,)*])
     };
 }
 
@@ -838,7 +844,7 @@ mod tests {
     }
 
     #[test]
-    fn test_macro() {
+    fn test_macro1() {
         let ma = marr_d1!(X; [0, 1]);
         for i in X::keys() {
             assert_eq!(ma[i], i);
@@ -852,6 +858,41 @@ mod tests {
             assert_eq!(ma[(i, j, k)], i * Y::LEN * X::LEN + j * Z::LEN + k);
         }
     }
+
+    #[test]
+    fn test_macro1_2() {
+        let ma: MArrD1<X, usize> = marr_d1!(_; [0, 1]);
+        for i in X::keys() {
+            assert_eq!(ma[i], i);
+        }
+        let ma: MArrD2<X, Y, usize> = marr_d2!(_, _; [[0, 1, 2], [3, 4, 5]]);
+        for (i, j) in MArrD2::<X, Y, usize>::indexes() {
+            assert_eq!(ma[(i, j)], i * Y::LEN + j);
+        }
+        let ma: MArrD3<X, Y, Z, usize> =
+            marr_d3!(_, _, _; [[[0, 1], [2, 3], [4, 5]], [[6, 7], [8, 9], [10, 11]]]);
+        for (i, j, k) in MArrD3::<X, Y, Z, usize>::indexes() {
+            assert_eq!(ma[(i, j, k)], i * Y::LEN * X::LEN + j * Z::LEN + k);
+        }
+    }
+
+    #[test]
+    fn test_macro2() {
+        let ma: MArrD1<X, usize> = marr_d1![0, 1];
+        for i in X::keys() {
+            assert_eq!(ma[i], i);
+        }
+        let ma: MArrD2<X, Y, usize> = marr_d2![[0, 1, 2], [3, 4, 5]];
+        for (i, j) in MArrD2::<X, Y, usize>::indexes() {
+            assert_eq!(ma[(i, j)], i * Y::LEN + j);
+        }
+        let ma: MArrD3<X, Y, Z, usize> =
+            marr_d3![[[0, 1], [2, 3], [4, 5]], [[6, 7], [8, 9], [10, 11]]];
+        for (i, j, k) in MArrD3::<X, Y, Z, usize>::indexes() {
+            assert_eq!(ma[(i, j, k)], i * Y::LEN * X::LEN + j * Z::LEN + k);
+        }
+    }
+
     #[test]
     fn test_from_iter() {
         let ma = MArrD2::<X, Y, _>::from_iter(0..6);
