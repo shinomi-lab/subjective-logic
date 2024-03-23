@@ -122,6 +122,20 @@ impl<T, V> Simplex<T, V> {
     {
         OpinionRef::from((self, a)).projection()
     }
+
+    fn normalized<Idx>(mut b: T, mut u: V) -> Self
+    where
+        T: Container<Idx, Output = V> + IndexMut<Idx>,
+        V: Float + Sum + DivAssign + AddAssign + UlpsEq,
+        Idx: Clone + fmt::Debug,
+    {
+        let s = T::indexes().map(|i| b[i]).sum::<V>() + u;
+        for i in T::indexes() {
+            b[i] /= s;
+        }
+        u /= s;
+        Self::try_new(b, u).unwrap()
+    }
 }
 
 /// The generlized structure of a multinomial opinion.
@@ -423,8 +437,8 @@ where
 
 fn compute_simlex<T, V, Idx>(op: &FuseOp, lhs: &Simplex<T, V>, rhs: &Simplex<T, V>) -> Simplex<T, V>
 where
-    T: Container<Idx, Output = V> + FromFn<Idx, V> + Zeros + Clone,
-    V: Float + UlpsEq + fmt::Debug + AddAssign,
+    T: Container<Idx, Output = V> + FromFn<Idx, V> + Zeros + Clone + IndexMut<Idx>,
+    V: Float + UlpsEq + fmt::Debug + AddAssign + DivAssign + Sum,
     Idx: Copy + fmt::Debug,
 {
     if lhs.is_dogmatic() && rhs.is_dogmatic() {
@@ -443,7 +457,7 @@ where
                 let temp = lhs_u + rhs_u - lhs_u * rhs_u;
                 let b = T::from_fn(|i| (lhs.b()[i] * rhs_u + rhs.b()[i] * lhs_u) / temp);
                 let u = lhs_u * rhs_u / temp;
-                Simplex::new(b, u)
+                Simplex::normalized(b, u)
             }
             FuseOp::Avg if lhs.is_dogmatic() => lhs.clone(),
             FuseOp::Avg if rhs.is_dogmatic() => rhs.clone(),
@@ -453,7 +467,7 @@ where
                 let temp = lhs_u + rhs_u;
                 let b = T::from_fn(|i| (lhs.b()[i] * rhs_u + rhs.b()[i] * lhs_u) / temp);
                 let u = (V::one() + V::one()) * lhs_u * rhs_u / temp;
-                Simplex::new(b, u)
+                Simplex::normalized(b, u)
             }
             FuseOp::Wgh if lhs.is_vacuous() && rhs.is_vacuous() => Simplex::vacuous(),
             FuseOp::Wgh if lhs.is_vacuous() || rhs.is_dogmatic() => rhs.clone(),
@@ -468,7 +482,7 @@ where
                     (lhs.b()[i] * lhs_sum_b * rhs_u + rhs.b()[i] * rhs_sum_b * lhs_u) / temp
                 });
                 let u = (lhs_sum_b + rhs_sum_b) * lhs_u * rhs_u / temp;
-                Simplex::new(b, u)
+                Simplex::normalized(b, u)
             }
         }
     }
@@ -556,7 +570,7 @@ where
 impl<'a, T, V, Idx> Fuse<OpinionRef<'a, T, V>, OpinionRef<'a, T, V>, Idx> for FuseOp
 where
     T: Container<Idx, Output = V> + Clone + Zeros + FromFn<Idx, V> + IndexMut<Idx>,
-    V: Float + UlpsEq + AddAssign + DivAssign + fmt::Debug,
+    V: Float + UlpsEq + AddAssign + DivAssign + fmt::Debug + Sum,
     Idx: Copy + fmt::Debug,
 {
     type Output = Opinion<T, V>;
@@ -576,7 +590,7 @@ where
 impl<T, V, Idx> Fuse<&Opinion<T, V>, &Simplex<T, V>, Idx> for FuseOp
 where
     T: Container<Idx, Output = V> + Clone + Zeros + FromFn<Idx, V> + IndexMut<Idx>,
-    V: Float + UlpsEq + AddAssign + DivAssign + fmt::Debug,
+    V: Float + UlpsEq + AddAssign + DivAssign + fmt::Debug + Sum,
     Idx: Copy + fmt::Debug,
 {
     type Output = Opinion<T, V>;
@@ -589,7 +603,7 @@ where
 impl<T, V, Idx> Fuse<&Opinion<T, V>, &Opinion<T, V>, Idx> for FuseOp
 where
     T: Container<Idx, Output = V> + Clone + Zeros + FromFn<Idx, V> + IndexMut<Idx>,
-    V: Float + UlpsEq + AddAssign + DivAssign + fmt::Debug,
+    V: Float + UlpsEq + AddAssign + DivAssign + fmt::Debug + Sum,
     Idx: Copy + fmt::Debug,
 {
     type Output = Opinion<T, V>;
@@ -602,7 +616,7 @@ where
 impl<'a, T, V, Idx> Fuse<OpinionRef<'a, T, V>, &'a Simplex<T, V>, Idx> for FuseOp
 where
     T: Container<Idx, Output = V> + Clone + Zeros + FromFn<Idx, V> + IndexMut<Idx>,
-    V: Float + UlpsEq + AddAssign + DivAssign + fmt::Debug,
+    V: Float + UlpsEq + AddAssign + DivAssign + fmt::Debug + Sum,
     Idx: Copy + fmt::Debug,
 {
     type Output = Opinion<T, V>;
@@ -615,7 +629,7 @@ where
 impl<T, V, Idx> Fuse<&Simplex<T, V>, &Simplex<T, V>, Idx> for FuseOp
 where
     T: Container<Idx, Output = V> + Clone + Zeros + FromFn<Idx, V> + IndexMut<Idx>,
-    V: Float + UlpsEq + AddAssign + DivAssign + fmt::Debug,
+    V: Float + UlpsEq + AddAssign + DivAssign + fmt::Debug + Sum,
     Idx: Copy + fmt::Debug,
 {
     type Output = Simplex<T, V>;
@@ -631,7 +645,7 @@ where
 impl<T, V, Idx> FuseAssign<Opinion<T, V>, &Opinion<T, V>, Idx> for FuseOp
 where
     T: Container<Idx, Output = V> + Clone + Zeros + FromFn<Idx, V> + IndexMut<Idx>,
-    V: Float + UlpsEq + AddAssign + DivAssign + fmt::Debug,
+    V: Float + UlpsEq + AddAssign + DivAssign + fmt::Debug + Sum,
     Idx: Copy + fmt::Debug,
 {
     fn fuse_assign(&self, lhs: &mut Opinion<T, V>, rhs: &Opinion<T, V>) {
@@ -642,7 +656,7 @@ where
 impl<'a, T, V, Idx> FuseAssign<Opinion<T, V>, OpinionRef<'a, T, V>, Idx> for FuseOp
 where
     T: Container<Idx, Output = V> + Clone + Zeros + FromFn<Idx, V> + IndexMut<Idx>,
-    V: Float + UlpsEq + AddAssign + DivAssign + fmt::Debug,
+    V: Float + UlpsEq + AddAssign + DivAssign + fmt::Debug + Sum,
     Idx: Copy + fmt::Debug,
 {
     fn fuse_assign(&self, lhs: &mut Opinion<T, V>, rhs: OpinionRef<'a, T, V>) {
@@ -653,7 +667,7 @@ where
 impl<T, V, Idx> FuseAssign<Opinion<T, V>, &Simplex<T, V>, Idx> for FuseOp
 where
     T: Container<Idx, Output = V> + Clone + Zeros + FromFn<Idx, V> + IndexMut<Idx>,
-    V: Float + UlpsEq + AddAssign + DivAssign + fmt::Debug,
+    V: Float + UlpsEq + AddAssign + DivAssign + fmt::Debug + Sum,
     Idx: Copy + fmt::Debug,
 {
     fn fuse_assign(&self, lhs: &mut Opinion<T, V>, rhs: &Simplex<T, V>) {
@@ -664,7 +678,7 @@ where
 impl<T, V, Idx> FuseAssign<Simplex<T, V>, &Simplex<T, V>, Idx> for FuseOp
 where
     T: Container<Idx, Output = V> + Clone + Zeros + FromFn<Idx, V> + IndexMut<Idx>,
-    V: Float + UlpsEq + AddAssign + DivAssign + fmt::Debug,
+    V: Float + UlpsEq + AddAssign + DivAssign + fmt::Debug + Sum,
     Idx: Copy + fmt::Debug,
 {
     fn fuse_assign(&self, lhs: &mut Simplex<T, V>, rhs: &Simplex<T, V>) {

@@ -589,4 +589,16 @@ mod tests {
         assert_eq!(X::LEN, W::LEN);
         assert_eq!(ww.b(), &marr_d1![0.5, 0.0]);
     }
+
+    #[test]
+    fn test_fuse_error() {
+        let mut w = OpinionD1::<X, f32>::new(
+            marr_d1![0.25, 0.00016426429],
+            0.7498357,
+            marr_d1![0.9993434, 0.0006566254],
+        );
+        let s = SimplexD1::new(marr_d1![0.0, 0.03733333], 0.9626667);
+        FuseOp::Wgh.fuse_assign(&mut w, &s);
+        println!("{w:?}");
+    }
 }
