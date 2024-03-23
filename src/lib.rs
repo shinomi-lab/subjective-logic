@@ -4,6 +4,7 @@
 pub mod approx_ext;
 pub mod bi;
 pub mod convert;
+pub mod domain;
 pub mod errors;
 pub mod iter;
 pub mod mul;

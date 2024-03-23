@@ -6,8 +6,10 @@ use itertools::izip;
 use num_traits::Float;
 
 use crate::{
+    domain::Domain,
+    domain::DomainConv,
     errors::InvalidValueError,
-    multi_array::labeled::{product2_iter, product3_iter, Domain, MArrD1, MArrD2, MArrD3},
+    multi_array::labeled::{product2_iter, product3_iter, MArrD1, MArrD2, MArrD3},
     ops::{Product2, Product3, Projection},
 };
 
@@ -15,18 +17,6 @@ use super::{Opinion, OpinionRef, Simplex};
 
 /// A simplex with a 1-dimensional domain `D0`.
 pub type SimplexD1<D0, V> = Simplex<MArrD1<D0, V>, V>;
-
-/// A multinomial opinion with a 1-dimensional domain `D0`.
-pub type OpinionD1<D0, V> = Opinion<MArrD1<D0, V>, V>;
-
-/// A multinomial opinion with a 1-dimensional domain `D0`.
-pub type OpinionD2<D0, D1, V> = Opinion<MArrD2<D0, D1, V>, V>;
-
-/// A multinomial opinion with a 1-dimensional domain `D0`.
-pub type OpinionD3<D0, D1, D2, V> = Opinion<MArrD3<D0, D1, D2, V>, V>;
-
-/// A reference of a multinomial opinion with a 1-dimensional domain `D0`.
-pub type OpinionRefD1<'a, D0, V> = OpinionRef<'a, MArrD1<D0, V>, V>;
 
 impl<D0, V> TryFrom<(Vec<V>, V)> for SimplexD1<D0, V>
 where
@@ -39,6 +29,31 @@ where
         Self::try_new(MArrD1::from_iter(value.0), value.1)
     }
 }
+
+impl<D, E, V> DomainConv<SimplexD1<E, V>> for SimplexD1<D, V>
+where
+    D: Domain,
+    E: Domain + From<D>,
+{
+    fn conv(self) -> SimplexD1<E, V> {
+        Simplex {
+            belief: self.belief.conv(),
+            uncertainty: self.uncertainty,
+        }
+    }
+}
+
+/// A multinomial opinion with a 1-dimensional domain `D0`.
+pub type OpinionD1<D0, V> = Opinion<MArrD1<D0, V>, V>;
+
+/// A multinomial opinion with a 1-dimensional domain `D0`.
+pub type OpinionD2<D0, D1, V> = Opinion<MArrD2<D0, D1, V>, V>;
+
+/// A multinomial opinion with a 1-dimensional domain `D0`.
+pub type OpinionD3<D0, D1, D2, V> = Opinion<MArrD3<D0, D1, D2, V>, V>;
+
+/// A reference of a multinomial opinion with a 1-dimensional domain `D0`.
+pub type OpinionRefD1<'a, D0, V> = OpinionRef<'a, MArrD1<D0, V>, V>;
 
 impl<'a, D0, D1, V> Product2<OpinionRefD1<'a, D0, V>, OpinionRefD1<'a, D1, V>>
     for OpinionD2<D0, D1, V>
@@ -95,10 +110,12 @@ mod tests {
 
     use super::{OpinionD1, OpinionD2, OpinionRefD1, SimplexD1};
     use crate::{
+        domain::{Domain, DomainConv},
+        impl_domain,
         iter::Container,
         marr_d1, marr_d2,
         mul::{check_base_rate, mbr},
-        multi_array::labeled::{Domain, MArrD1, MArrD2},
+        multi_array::labeled::{MArrD1, MArrD2},
         ops::{
             Abduction, Deduction, Discount, Fuse, FuseAssign, FuseOp, MaxUncertainty, Product2,
             Projection,
@@ -123,22 +140,13 @@ mod tests {
     }
 
     struct X;
-    impl Domain for X {
-        const LEN: Self::Idx = 2;
-        type Idx = usize;
-    }
+    impl_domain!(X = 2);
 
     struct Y;
-    impl Domain for Y {
-        const LEN: Self::Idx = 3;
-        type Idx = usize;
-    }
+    impl_domain!(Y = 3);
 
     struct Z;
-    impl Domain for Z {
-        const LEN: Self::Idx = 2;
-        type Idx = usize;
-    }
+    impl_domain!(Z = 2);
 
     #[test]
     fn test_prod2() {
@@ -569,5 +577,16 @@ mod tests {
         assert_eq!(nround_arr!(f32, 2, wx.b()), [0.0, 7.0, 0.0]);
         assert_eq!(nround![f32, 2](wx.u()), 93.0);
         assert_eq!(nround_arr!(f32, 2, wx.projection()), [65.0, 26.0, 9.0]);
+    }
+
+    struct W;
+    impl_domain!(W from X);
+
+    #[test]
+    fn test_conv() {
+        let wx = SimplexD1::<X, _>::try_from((vec![0.5, 0.0], 0.5)).unwrap();
+        let ww: SimplexD1<W, _> = wx.conv();
+        assert_eq!(X::LEN, W::LEN);
+        assert_eq!(ww.b(), &marr_d1![0.5, 0.0]);
     }
 }

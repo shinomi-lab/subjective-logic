@@ -1,7 +1,7 @@
 use std::{
     cmp, fmt,
     marker::PhantomData,
-    ops::{Index, IndexMut, Mul, Range},
+    ops::{Index, IndexMut, Mul},
     slice,
 };
 
@@ -9,46 +9,10 @@ use itertools::iproduct;
 use num_traits::Zero;
 
 use crate::{
+    domain::{Domain, DomainConv, Keys},
     iter::{Container, ContainerMap, FromFn},
     ops::{Indexes, Product2, Product3, Zeros},
 };
-
-pub trait Domain {
-    type Idx: Into<usize> + Clone + fmt::Debug;
-    const LEN: usize;
-}
-
-#[macro_export]
-macro_rules! impl_domain {
-    ($s:ident = $l:expr) => {
-        impl Domain for $s {
-            const LEN: usize = $l;
-            type Idx = usize;
-        }
-    };
-
-    ($s:ident from $f:ident) => {
-        impl_domain!($s = $f::LEN);
-        impl From<$f> for $s {
-            fn from(_: $f) -> $s {
-                $s
-            }
-        }
-    };
-}
-
-impl<D: Domain<Idx = usize>> Keys<usize> for D {
-    type Iter = Range<D::Idx>;
-
-    fn keys() -> Self::Iter {
-        0..D::LEN
-    }
-}
-
-pub trait Keys<I> {
-    type Iter: Iterator<Item = I> + Clone;
-    fn keys() -> Self::Iter;
-}
 
 pub struct Iter<'a, S>
 where
@@ -272,6 +236,19 @@ impl<D0: Domain<Idx = usize>, V> ContainerMap<D0::Idx> for MArrD1<D0, V> {
     type Map<U> = MArrD1<D0, U>;
 }
 
+impl<D0, E, V> DomainConv<MArrD1<E, V>> for MArrD1<D0, V>
+where
+    D0: Domain,
+    E: Domain + From<D0>,
+{
+    fn conv(self) -> MArrD1<E, V> {
+        MArrD1 {
+            _marker: PhantomData,
+            inner: self.inner,
+        }
+    }
+}
+
 impl<D0, V> MArrD1<D0, V>
 where
     D0: Domain,
@@ -292,13 +269,6 @@ where
     #[inline]
     pub fn iter_mut(&mut self) -> <&mut Self as IntoIterator>::IntoIter {
         self.into_iter()
-    }
-
-    pub fn into_other<E: Domain + From<D0>>(self) -> MArrD1<E, V> {
-        MArrD1 {
-            _marker: PhantomData,
-            inner: self.inner,
-        }
     }
 }
 
@@ -821,6 +791,8 @@ macro_rules! marr_d3 {
 
 #[cfg(test)]
 mod tests {
+    use crate::domain::DomainConv;
+    use crate::impl_domain;
     use crate::iter::Container;
     use crate::multi_array::labeled::MArrD3;
     use crate::ops::{Indexes, Product2, Product3, Zeros};
@@ -1161,15 +1133,13 @@ mod tests {
         }
     }
 
-    struct V;
-    impl_domain!(V from X);
     struct W;
     impl_domain!(W from X);
 
     #[test]
-    fn into_other() {
+    fn test_conv() {
         let mx = MArrD1::<X, _>::from_iter([1, 2]);
-        let mw = mx.into_other::<W>();
+        let mw: MArrD1<W, _> = mx.conv();
         assert_eq!(X::LEN, W::LEN);
         assert_eq!(mw.inner, vec![1, 2]);
     }
