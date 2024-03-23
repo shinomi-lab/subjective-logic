@@ -19,11 +19,39 @@ pub trait Domain {
 }
 
 #[macro_export]
-macro_rules! impl_domain {
-    ($s:ident, $l:literal) => {
+macro_rules! domain {
+    ($s:ident = $l:expr) => {
+        struct $s;
         impl Domain for $s {
             const LEN: usize = $l;
             type Idx = usize;
+        }
+    };
+
+    ($s:ident = $l:expr; derive = [$($e:tt),+$(,)?]) => {
+        #[derive($($e,)+)]
+        struct $s;
+        impl Domain for $s {
+            const LEN: usize = $l;
+            type Idx = usize;
+        }
+    };
+
+    ($s:ident from $f:ident) => {
+        domain!($s = $f::LEN);
+        impl From<$f> for $s {
+            fn from(_: $f) -> $s {
+                $s
+            }
+        }
+    };
+
+    ($s:ident from $f:ident; derive = [$($e:tt),+$(,)?]) => {
+        domain!($s = $f::LEN; derive = [$($e,)+]);
+        impl From<$f> for $s {
+            fn from(_: $f) -> $s {
+                $s
+            }
         }
     };
 }
@@ -283,6 +311,13 @@ where
     #[inline]
     pub fn iter_mut(&mut self) -> <&mut Self as IntoIterator>::IntoIter {
         self.into_iter()
+    }
+
+    pub fn into_other<E: Domain + From<D0>>(self) -> MArrD1<E, V> {
+        MArrD1 {
+            _marker: PhantomData,
+            inner: self.inner,
+        }
     }
 }
 
@@ -813,14 +848,9 @@ mod tests {
 
     use super::{Domain, MArrD1};
 
-    struct X;
-    impl_domain!(X, 2);
-
-    struct Y;
-    impl_domain!(Y, 3);
-
-    struct Z;
-    impl_domain!(Z, 2);
+    domain!(X = 2);
+    domain!(Y = 3; derive = [Debug]);
+    domain!(Z = 2; derive = [Debug, Clone]);
 
     #[test]
     fn test_clone() {
@@ -1145,5 +1175,16 @@ mod tests {
         for ((i, j, k), xyz) in mxyz.iter_with() {
             assert_eq!(mx[i] * my[j] * mz[k], *xyz);
         }
+    }
+
+    domain!(V from X);
+    domain!(W from X; derive = [Clone]);
+
+    #[test]
+    fn into_other() {
+        let mx = MArrD1::<X, _>::from_iter([1, 2]);
+        let mw = mx.into_other::<W>();
+        assert_eq!(X::LEN, W::LEN);
+        assert_eq!(mw.inner, vec![1, 2]);
     }
 }
