@@ -19,18 +19,8 @@ pub trait Domain {
 }
 
 #[macro_export]
-macro_rules! domain {
+macro_rules! impl_domain {
     ($s:ident = $l:expr) => {
-        struct $s;
-        impl Domain for $s {
-            const LEN: usize = $l;
-            type Idx = usize;
-        }
-    };
-
-    ($s:ident = $l:expr; derive = [$($e:tt),+$(,)?]) => {
-        #[derive($($e,)+)]
-        struct $s;
         impl Domain for $s {
             const LEN: usize = $l;
             type Idx = usize;
@@ -38,16 +28,7 @@ macro_rules! domain {
     };
 
     ($s:ident from $f:ident) => {
-        domain!($s = $f::LEN);
-        impl From<$f> for $s {
-            fn from(_: $f) -> $s {
-                $s
-            }
-        }
-    };
-
-    ($s:ident from $f:ident; derive = [$($e:tt),+$(,)?]) => {
-        domain!($s = $f::LEN; derive = [$($e,)+]);
+        impl_domain!($s = $f::LEN);
         impl From<$f> for $s {
             fn from(_: $f) -> $s {
                 $s
@@ -848,9 +829,12 @@ mod tests {
 
     use super::{Domain, MArrD1};
 
-    domain!(X = 2);
-    domain!(Y = 3; derive = [Debug]);
-    domain!(Z = 2; derive = [Debug, Clone]);
+    struct X;
+    impl_domain!(X = 2);
+    struct Y;
+    impl_domain!(Y = 3);
+    struct Z;
+    impl_domain!(Z = 2);
 
     #[test]
     fn test_clone() {
@@ -1177,8 +1161,10 @@ mod tests {
         }
     }
 
-    domain!(V from X);
-    domain!(W from X; derive = [Clone]);
+    struct V;
+    impl_domain!(V from X);
+    struct W;
+    impl_domain!(W from X);
 
     #[test]
     fn into_other() {
