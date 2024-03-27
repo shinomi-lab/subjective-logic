@@ -73,7 +73,7 @@ where
             .reduce(V::min)
             .unwrap();
         let b = MArrD2::<D0, D1, V>::from_iter(p_iter.zip(&a).map(|(p, &a)| p - a * u));
-        Opinion::new(b, u, a)
+        Opinion::normalized(b, u, a)
     }
 }
 
@@ -98,7 +98,7 @@ where
             .reduce(V::min)
             .unwrap();
         let b = MArrD3::<D0, D1, D2, _>::from_iter(p_iter.zip(&a).map(|(p, &a)| p - a * u));
-        Opinion::new(b, u, a)
+        Opinion::normalized(b, u, a)
     }
 }
 

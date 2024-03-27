@@ -134,7 +134,7 @@ impl<T, V> Simplex<T, V> {
             b[i] /= s;
         }
         u /= s;
-        Self::try_new(b, u).unwrap()
+        Self::new_unchecked(b, u)
     }
 }
 
@@ -228,6 +228,19 @@ impl<T, V> Opinion<T, V> {
         Self::try_new(b, u, a).unwrap()
     }
 
+    pub fn normalized<Idx>(b: T, u: V, mut a: T) -> Self
+    where
+        V: UlpsEq + Float + AddAssign + DivAssign,
+        Idx: fmt::Debug + Clone + Copy,
+        T: Container<Idx, Output = V> + IndexMut<Idx, Output = V>,
+    {
+        normalize_prob_dist(&mut a);
+        Self {
+            simplex: Simplex::new_unchecked(b, u),
+            base_rate: a,
+        }
+    }
+
     fn new_unchecked(b: T, u: V, a: T) -> Self {
         Self {
             simplex: Simplex::new_unchecked(b, u),
@@ -305,22 +318,33 @@ impl<'a, T, U> From<&'a Opinion<T, U>> for OpinionRef<'a, T, U> {
     }
 }
 
+fn normalize_prob_dist<'a, Idx, T, V>(p: &'a mut T)
+where
+    Idx: Copy,
+    T: Indexes<Idx> + IndexMut<Idx, Output = V>,
+    V: Float + AddAssign + DivAssign,
+{
+    let mut s = V::zero();
+    for i in T::indexes() {
+        s += p[i];
+    }
+    for i in T::indexes() {
+        p[i] /= s;
+    }
+}
+
 impl<'a, Idx, T, V> Projection<Idx, T> for OpinionRef<'a, T, V>
 where
-    T: Index<Idx, Output = V> + FromFn<Idx, V> + IndexMut<Idx> + Indexes<Idx>,
+    T: FromFn<Idx, V> + Indexes<Idx> + Index<Idx, Output = V> + IndexMut<Idx>,
     Idx: Copy,
     V: Float + AddAssign + DivAssign,
 {
     fn projection(&self) -> T {
-        let mut s = V::zero();
         let mut a = T::from_fn(|idx| {
             let p = self.b()[idx.clone()] + self.base_rate[idx] * self.u();
-            s += p;
             p
         });
-        for idx in T::indexes() {
-            a[idx] /= s;
-        }
+        normalize_prob_dist(&mut a);
         a
     }
 }
@@ -442,7 +466,7 @@ where
     Idx: Copy + fmt::Debug,
 {
     if lhs.is_dogmatic() && rhs.is_dogmatic() {
-        Simplex::new(
+        Simplex::normalized(
             T::from_fn(|i| (lhs.b()[i] + rhs.b()[i]) / (V::one() + V::one())),
             V::zero(),
         )
@@ -767,7 +791,7 @@ where
                 .sum::<V>();
         let p = self.projection();
         let b = U::from_fn(|y| T::indexes().map(|x| p[x] * cond_p[x][y]).sum::<V>() - ay[y] * u);
-        Opinion::<U, V>::new(b, u, ay)
+        Opinion::<U, V>::from((Simplex::normalized(b, u), ay))
     }
 }
 
@@ -803,7 +827,7 @@ where
 
 impl<Cond, T, U, X, Y, V> InverseCondition<X, Y, T, U, V> for Cond
 where
-    T: Container<X, Output = V> + ContainerMap<X> + FromFn<X, V>,
+    T: Container<X, Output = V> + ContainerMap<X> + FromFn<X, V> + IndexMut<X>,
     U: Container<Y, Output = V> + ContainerMap<Y> + FromFn<Y, V> + IndexMut<Y>,
     Cond: Container<X, Output = Simplex<U, V>> + ContainerMap<X>,
     X: Copy + fmt::Debug,
@@ -852,7 +876,7 @@ where
         U::map(|y| {
             let u = max_u_xy[y] * (wprop_u_yx + irrelevance_yx[y] - wprop_u_yx * irrelevance_yx[y]);
             let b = T::from_fn(|x| p_xy[y][x] - u * ax[x]);
-            Simplex::new(b, u)
+            Simplex::normalized(b, u)
         })
     }
 }
