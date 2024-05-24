@@ -710,7 +710,7 @@ where
     }
 }
 
-fn mbr<'a, X, Y, T, Cond, U, V>(ax: &T, conds: &'a Cond) -> Option<U>
+pub fn mbr<'a, X, Y, T, Cond, U, V>(ax: &T, conds: &'a Cond) -> Option<U>
 where
     T: Index<X, Output = V>,
     Cond: Container<X>,
@@ -815,7 +815,7 @@ where
     }
 }
 
-trait InverseCondition<X, Y, T, U, V>
+pub trait InverseCondition<X, Y, T, U, V>
 where
     Self: Index<X, Output = Simplex<U, V>>,
     T: Index<X, Output = V>,
