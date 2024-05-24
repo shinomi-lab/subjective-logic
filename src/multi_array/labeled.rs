@@ -472,6 +472,10 @@ where
     pub fn iter_mut(&mut self) -> <&mut Self as IntoIterator>::IntoIter {
         self.into_iter()
     }
+
+    pub fn down(&self, idx: D0::Idx) -> &MArrD1<D1, V> {
+        &self.inner[idx]
+    }
 }
 
 pub struct MArrD3<D0: Domain, D1: Domain, D2: Domain, V> {
@@ -704,6 +708,10 @@ where
     #[inline]
     pub fn iter_mut(&mut self) -> <&mut Self as IntoIterator>::IntoIter {
         self.into_iter()
+    }
+
+    pub fn down(&self, idx: D0::Idx) -> &MArrD2<D1, D2, V> {
+        &self.inner[idx]
     }
 }
 
