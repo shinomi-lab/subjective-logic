@@ -601,4 +601,26 @@ mod tests {
         FuseOp::Wgh.fuse_assign(&mut w, &s);
         println!("{w:?}");
     }
+
+    use super::super::MergeJointConditions2;
+
+    #[test]
+    fn test_merge_joint_conds() {
+        let cxy = marr_d1!(X; [
+            SimplexD1::<Y, f64>::new(marr_d1![0.1, 0.2, 0.3], 0.4),
+            SimplexD1::<Y, f64>::new(marr_d1![0.1, 0.2, 0.0], 0.7),
+        ]);
+        let czy = marr_d1!(Z; [
+            SimplexD1::<Y, f64>::new(marr_d1![0.1, 0.2, 0.3], 0.4),
+            SimplexD1::<Y, f64>::new(marr_d1![0.0, 0.2, 0.3], 0.5),
+        ]);
+        let ax = marr_d1!(X; [0.5, 0.5]);
+        let az = marr_d1!(Z; [0.1, 0.9]);
+        let ay = marr_d1!(Y; [0.1, 0.6, 0.3]);
+
+        let cyxz: Option<MArrD2<X, Z, SimplexD1<Y, f64>>> =
+            MArrD1::<Y, _>::merge_cond2(&cxy, &czy, &ax, &az, &ay);
+
+        assert!(cyxz.is_some());
+    }
 }

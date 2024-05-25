@@ -964,3 +964,59 @@ where
         Product3::product3(w0.as_ref(), w1.as_ref(), w2.as_ref())
     }
 }
+
+pub trait MergeJointConditions2<V, X1, X2, X1X2, Y, CYX1, CYX2, TX1, TX2, TY, U> {
+    type Output;
+    fn merge_cond2(y_x1: &CYX1, y_x2: &CYX2, ax1: &TX1, ax2: &TX2, ay: &TY)
+        -> Option<Self::Output>;
+}
+
+impl<V, X1, X2, X1X2, Y, CYX1, CYX2, TX1, TX2, TY, U, CX1X2Y>
+    MergeJointConditions2<V, X1, X2, X1X2, Y, CYX1, CYX2, TX1, TX2, TY, U> for CX1X2Y
+where
+    CYX1: Container<X1, Output = Simplex<TY, V>>
+        + InverseCondition<X1, Y, TX1, TY, V>
+        + ContainerMap<X1>,
+    CYX1::InvCond: Index<Y, Output = Simplex<TX1, V>>,
+    CYX2: Container<X2, Output = Simplex<TY, V>>
+        + InverseCondition<X2, Y, TX2, TY, V>
+        + ContainerMap<X2>,
+    CYX2::InvCond: Index<Y, Output = Simplex<TX2, V>>,
+    CX1X2Y: FromFn<Y, Simplex<U, V>>
+        + Container<Y, Output = Simplex<U, V>>
+        + ContainerMap<Y>
+        + InverseCondition<Y, X1X2, TY, U, V>,
+    TX1: Container<X1, Output = V>,
+    TX2: Container<X2, Output = V>,
+    TY: Container<Y, Output = V> + FromFn<Y, V> + IndexMut<Y>,
+    U: Container<X1X2, Output = V> + FromFn<X1X2, V> + IndexMut<X1X2>,
+    X1: Copy,
+    X2: Copy,
+    X1X2: Copy,
+    Y: Copy,
+    V: Float + UlpsEq + Sum + AddAssign + DivAssign,
+    for<'a> OpinionRef<'a, TX1, V>: From<(&'a Simplex<TX1, V>, &'a TX1)>,
+    for<'a> OpinionRef<'a, TX2, V>: From<(&'a Simplex<TX2, V>, &'a TX2)>,
+    for<'a> Opinion<U, V>: Product2<OpinionRef<'a, TX1, V>, OpinionRef<'a, TX2, V>>,
+{
+    type Output = CX1X2Y::InvCond;
+
+    fn merge_cond2(
+        y_x1: &CYX1,
+        y_x2: &CYX2,
+        ax1: &TX1,
+        ax2: &TX2,
+        ay: &TY,
+    ) -> Option<Self::Output> {
+        let x1_y = y_x1.inverse(ax1, &mbr(ax1, y_x1)?);
+        let x2_y = y_x2.inverse(ax2, &mbr(ax2, y_x2)?);
+
+        let x12_y = CX1X2Y::from_fn(|y| {
+            let x1yr = OpinionRef::from((&x1_y[y], ax1));
+            let x2yr = OpinionRef::from((&x2_y[y], ax2));
+            let OpinionBase { simplex, .. } = Product2::product2(x1yr, x2yr);
+            simplex
+        });
+        Some(x12_y.inverse(ay, &mbr(ay, &x12_y)?))
+    }
+}
