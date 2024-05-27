@@ -606,21 +606,33 @@ mod tests {
 
     #[test]
     fn test_merge_joint_conds() {
-        let cxy = marr_d1!(X; [
-            SimplexD1::<Y, f64>::new(marr_d1![0.1, 0.2, 0.3], 0.4),
-            SimplexD1::<Y, f64>::new(marr_d1![0.1, 0.2, 0.0], 0.7),
+        // let k = 0.0001;
+        let k = 0.00001;
+        let cyx = marr_d1!(X; [
+            SimplexD1::<Y, f64>::new(marr_d1![0.4, 0.0, 0.2], 0.4),
+            SimplexD1::<Y, f64>::new(marr_d1![0.4, 0.0 + k, 0.2], 0.4 - k),
         ]);
-        let czy = marr_d1!(Z; [
-            SimplexD1::<Y, f64>::new(marr_d1![0.1, 0.2, 0.3], 0.4),
-            SimplexD1::<Y, f64>::new(marr_d1![0.0, 0.2, 0.3], 0.5),
+        let cyz = marr_d1!(Z; [
+            SimplexD1::<Y, f64>::new(marr_d1![0.2, 0.2, 0.0], 0.6),
+            SimplexD1::<Y, f64>::new(marr_d1![0.2, 0.2, k], 0.6 - k),
         ]);
         let ax = marr_d1!(X; [0.5, 0.5]);
-        let az = marr_d1!(Z; [0.1, 0.9]);
-        let ay = marr_d1!(Y; [0.1, 0.6, 0.3]);
+        let az = marr_d1!(Z; [0.5, 0.5]);
+        let ay = marr_d1!(Y; [0.1, 0.1, 0.8]);
+
+        println!("{:?}", cyz[0].projection(&mbr(&az, &cyz).unwrap()));
+        println!("{:?}", cyz[1].projection(&mbr(&az, &cyz).unwrap()));
+        println!("{:?}", cyz[0].projection(&ay));
+        println!("{:?}", cyz[1].projection(&ay));
 
         let cyxz: Option<MArrD2<X, Z, SimplexD1<Y, f64>>> =
-            MArrD1::<Y, _>::merge_cond2(&cxy, &czy, &ax, &az, &ay);
-
+            MArrD1::<Y, _>::merge_cond2(&cyx, &cyz, &ax, &az, &ay);
         assert!(cyxz.is_some());
+        println!("{cyxz:?}");
+
+        let cyzx: Option<MArrD2<Z, X, SimplexD1<Y, f64>>> =
+            MArrD1::<Y, _>::merge_cond2(&cyz, &cyx, &az, &ax, &ay);
+        assert!(cyzx.is_some());
+        println!("{cyxz:?}");
     }
 }

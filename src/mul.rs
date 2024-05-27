@@ -11,7 +11,7 @@ use std::{
 };
 
 use crate::{
-    approx_ext::{is_one, is_zero},
+    approx_ext::{self, is_one, is_zero},
     errors::{check_is_one, check_unit_interval, InvalidValueError},
     iter::{Container, ContainerMap, FromFn},
     ops::{
@@ -127,7 +127,7 @@ impl<T, V> Simplex<T, V> {
     where
         T: Container<Idx, Output = V> + IndexMut<Idx>,
         V: Float + Sum + DivAssign + AddAssign + UlpsEq,
-        Idx: Clone + fmt::Debug,
+        Idx: Clone,
     {
         let s = T::indexes().map(|i| b[i]).sum::<V>() + u;
         for i in T::indexes() {
@@ -363,14 +363,28 @@ where
 impl<'a, T, V, Idx> MaxUncertainty<Idx, V, T> for Simplex<T, V>
 where
     T: Container<Idx, Output = V> + FromFn<Idx, V> + IndexMut<Idx>,
-    V: Float + AddAssign + DivAssign,
+    V: Float + AddAssign + DivAssign + UlpsEq,
     Idx: Copy,
 {
     type Output = Simplex<T, V>;
 
     fn max_uncertainty(&self, a: &T) -> V {
         let p = self.projection(a);
-        T::indexes().map(|i| p[i] / a[i]).reduce(<V>::min).unwrap()
+        let mut u = V::one();
+        for i in T::indexes() {
+            let temp = if approx_ext::is_zero(p[i]) && approx_ext::is_zero(a[i]) {
+                // P(x) = b(x) + a(x)u
+                // P(x) = 0 && b(x) = 0 && u(x) => u has no constraint
+                V::one()
+            } else if approx_ext::is_zero(a[i]) {
+                // u is greater than any others (u is positive infinity)
+                V::one()
+            } else {
+                p[i] / a[i]
+            };
+            u = u.min(temp);
+        }
+        u
     }
 
     fn uncertainty_maximized(&self, a: &T) -> Self::Output {
@@ -462,8 +476,8 @@ where
 fn compute_simlex<T, V, Idx>(op: &FuseOp, lhs: &Simplex<T, V>, rhs: &Simplex<T, V>) -> Simplex<T, V>
 where
     T: Container<Idx, Output = V> + FromFn<Idx, V> + Zeros + Clone + IndexMut<Idx>,
-    V: Float + UlpsEq + fmt::Debug + AddAssign + DivAssign + Sum,
-    Idx: Copy + fmt::Debug,
+    V: Float + UlpsEq + AddAssign + DivAssign + Sum,
+    Idx: Copy,
 {
     if lhs.is_dogmatic() && rhs.is_dogmatic() {
         Simplex::normalized(
@@ -594,8 +608,8 @@ where
 impl<'a, T, V, Idx> Fuse<OpinionRef<'a, T, V>, OpinionRef<'a, T, V>, Idx> for FuseOp
 where
     T: Container<Idx, Output = V> + Clone + Zeros + FromFn<Idx, V> + IndexMut<Idx>,
-    V: Float + UlpsEq + AddAssign + DivAssign + fmt::Debug + Sum,
-    Idx: Copy + fmt::Debug,
+    V: Float + UlpsEq + AddAssign + DivAssign + Sum,
+    Idx: Copy,
 {
     type Output = Opinion<T, V>;
 
@@ -614,8 +628,8 @@ where
 impl<T, V, Idx> Fuse<&Opinion<T, V>, &Simplex<T, V>, Idx> for FuseOp
 where
     T: Container<Idx, Output = V> + Clone + Zeros + FromFn<Idx, V> + IndexMut<Idx>,
-    V: Float + UlpsEq + AddAssign + DivAssign + fmt::Debug + Sum,
-    Idx: Copy + fmt::Debug,
+    V: Float + UlpsEq + AddAssign + DivAssign + Sum,
+    Idx: Copy,
 {
     type Output = Opinion<T, V>;
 
@@ -627,8 +641,8 @@ where
 impl<T, V, Idx> Fuse<&Opinion<T, V>, &Opinion<T, V>, Idx> for FuseOp
 where
     T: Container<Idx, Output = V> + Clone + Zeros + FromFn<Idx, V> + IndexMut<Idx>,
-    V: Float + UlpsEq + AddAssign + DivAssign + fmt::Debug + Sum,
-    Idx: Copy + fmt::Debug,
+    V: Float + UlpsEq + AddAssign + DivAssign + Sum,
+    Idx: Copy,
 {
     type Output = Opinion<T, V>;
 
@@ -640,8 +654,8 @@ where
 impl<'a, T, V, Idx> Fuse<OpinionRef<'a, T, V>, &'a Simplex<T, V>, Idx> for FuseOp
 where
     T: Container<Idx, Output = V> + Clone + Zeros + FromFn<Idx, V> + IndexMut<Idx>,
-    V: Float + UlpsEq + AddAssign + DivAssign + fmt::Debug + Sum,
-    Idx: Copy + fmt::Debug,
+    V: Float + UlpsEq + AddAssign + DivAssign + Sum,
+    Idx: Copy,
 {
     type Output = Opinion<T, V>;
 
@@ -653,8 +667,8 @@ where
 impl<T, V, Idx> Fuse<&Simplex<T, V>, &Simplex<T, V>, Idx> for FuseOp
 where
     T: Container<Idx, Output = V> + Clone + Zeros + FromFn<Idx, V> + IndexMut<Idx>,
-    V: Float + UlpsEq + AddAssign + DivAssign + fmt::Debug + Sum,
-    Idx: Copy + fmt::Debug,
+    V: Float + UlpsEq + AddAssign + DivAssign + Sum,
+    Idx: Copy,
 {
     type Output = Simplex<T, V>;
 
@@ -669,8 +683,8 @@ where
 impl<T, V, Idx> FuseAssign<Opinion<T, V>, &Opinion<T, V>, Idx> for FuseOp
 where
     T: Container<Idx, Output = V> + Clone + Zeros + FromFn<Idx, V> + IndexMut<Idx>,
-    V: Float + UlpsEq + AddAssign + DivAssign + fmt::Debug + Sum,
-    Idx: Copy + fmt::Debug,
+    V: Float + UlpsEq + AddAssign + DivAssign + Sum,
+    Idx: Copy,
 {
     fn fuse_assign(&self, lhs: &mut Opinion<T, V>, rhs: &Opinion<T, V>) {
         self.fuse_assign(lhs, rhs.as_ref())
@@ -680,8 +694,8 @@ where
 impl<'a, T, V, Idx> FuseAssign<Opinion<T, V>, OpinionRef<'a, T, V>, Idx> for FuseOp
 where
     T: Container<Idx, Output = V> + Clone + Zeros + FromFn<Idx, V> + IndexMut<Idx>,
-    V: Float + UlpsEq + AddAssign + DivAssign + fmt::Debug + Sum,
-    Idx: Copy + fmt::Debug,
+    V: Float + UlpsEq + AddAssign + DivAssign + Sum,
+    Idx: Copy,
 {
     fn fuse_assign(&self, lhs: &mut Opinion<T, V>, rhs: OpinionRef<'a, T, V>) {
         *lhs = self.fuse(lhs.as_ref(), rhs);
@@ -691,8 +705,8 @@ where
 impl<T, V, Idx> FuseAssign<Opinion<T, V>, &Simplex<T, V>, Idx> for FuseOp
 where
     T: Container<Idx, Output = V> + Clone + Zeros + FromFn<Idx, V> + IndexMut<Idx>,
-    V: Float + UlpsEq + AddAssign + DivAssign + fmt::Debug + Sum,
-    Idx: Copy + fmt::Debug,
+    V: Float + UlpsEq + AddAssign + DivAssign + Sum,
+    Idx: Copy,
 {
     fn fuse_assign(&self, lhs: &mut Opinion<T, V>, rhs: &Simplex<T, V>) {
         *lhs = self.fuse(lhs.as_ref(), rhs);
@@ -702,8 +716,8 @@ where
 impl<T, V, Idx> FuseAssign<Simplex<T, V>, &Simplex<T, V>, Idx> for FuseOp
 where
     T: Container<Idx, Output = V> + Clone + Zeros + FromFn<Idx, V> + IndexMut<Idx>,
-    V: Float + UlpsEq + AddAssign + DivAssign + fmt::Debug + Sum,
-    Idx: Copy + fmt::Debug,
+    V: Float + UlpsEq + AddAssign + DivAssign + Sum,
+    Idx: Copy,
 {
     fn fuse_assign(&self, lhs: &mut Simplex<T, V>, rhs: &Simplex<T, V>) {
         *lhs = self.fuse(&(*lhs), rhs);
@@ -756,8 +770,8 @@ where
     for<'b> &'b Cond::Output: Into<&'b Simplex<U, V>>,
     U: Container<Y, Output = V> + FromFn<Y, V> + IndexMut<Y>,
     X: Copy,
-    Y: Copy + fmt::Debug,
-    V: Float + Sum + UlpsEq + AddAssign + DivAssign + fmt::Debug,
+    Y: Copy,
+    V: Float + Sum + UlpsEq + AddAssign + DivAssign,
 {
     type Output = Opinion<U, V>;
 
@@ -802,8 +816,8 @@ where
     for<'b> &'b Cond::Output: Into<&'b Simplex<U, V>>,
     U: Container<Y, Output = V> + FromFn<Y, V> + IndexMut<Y>,
     X: Copy,
-    Y: Copy + fmt::Debug,
-    V: Float + Sum + UlpsEq + AddAssign + DivAssign + fmt::Debug,
+    Y: Copy,
+    V: Float + Sum + UlpsEq + AddAssign + DivAssign,
 {
     type Output = Opinion<U, V>;
     fn deduce(self, conds: &'a Cond) -> Option<Self::Output> {
@@ -822,7 +836,8 @@ where
     U: Index<Y, Output = V>,
 {
     type InvCond;
-    fn inverse(&self, ax: &T, ay: &U) -> Self::InvCond;
+    /// convert a set of joint conditions X => Y into a invert joint set of Y => X
+    fn inverse(&self, ax: &T, ay: &U) -> Option<Self::InvCond>;
 }
 
 impl<Cond, T, U, X, Y, V> InverseCondition<X, Y, T, U, V> for Cond
@@ -830,28 +845,36 @@ where
     T: Container<X, Output = V> + ContainerMap<X> + FromFn<X, V> + IndexMut<X>,
     U: Container<Y, Output = V> + ContainerMap<Y> + FromFn<Y, V> + IndexMut<Y>,
     Cond: Container<X, Output = Simplex<U, V>> + ContainerMap<X>,
-    X: Copy + fmt::Debug,
+    X: Copy,
     Y: Copy,
-    V: Float + AddAssign + DivAssign + Sum + UlpsEq + fmt::Debug,
+    V: Float + AddAssign + DivAssign + Sum + UlpsEq,
+    T::Map<V>: IndexMut<X>,
+    U::Map<T::Map<V>>: IndexMut<Y>,
 {
     type InvCond = U::Map<Simplex<T, V>>;
 
-    fn inverse(&self, ax: &T, ay: &U) -> Self::InvCond {
+    fn inverse(&self, ax: &T, ay: &U) -> Option<Self::InvCond> {
         let p_yx: Cond::Map<U> = Cond::map(|x| self[x].projection(ay));
         let u_yx = T::from_fn(|x| self[x].max_uncertainty(ay));
-        let p_xy: U::Map<T::Map<V>> = U::map(|y| {
-            T::map(|x| ax[x] * p_yx[x][y] / T::indexes().map(|xd| ax[xd] * p_yx[xd][y]).sum::<V>())
-        });
+        let mut temp = U::map(|_| T::map(|_| V::zero()));
+        for y in U::indexes() {
+            for x in T::indexes() {
+                temp[y][x] = V::one();
+                let p = p_yx[x][y];
+                let q = T::indexes().map(|xd| ax[xd] * p_yx[xd][y]).sum::<V>();
+                if approx_ext::is_zero(q) && approx_ext::is_zero(p) {
+                    return None;
+                }
+                temp[y][x] = p / q;
+            }
+        }
+        let p_xy: U::Map<T::Map<V>> = U::map(|y| T::map(|x| temp[y][x] * ax[x]));
         let irrelevance_yx = U::from_fn(|y| {
             V::one() - T::indexes().map(|x| p_yx[x][y]).reduce(<V>::max).unwrap()
                 + T::indexes().map(|x| p_yx[x][y]).reduce(<V>::min).unwrap()
         });
-        let max_u_xy: U = U::from_fn(|y| {
-            T::indexes()
-                .map(|x| p_yx[x][y] / T::indexes().map(|k| ax[k] * p_yx[k][y]).sum::<V>())
-                .reduce(<V>::min)
-                .unwrap()
-        });
+        let max_u_xy: U =
+            U::from_fn(|y| T::indexes().map(|x| temp[y][x]).reduce(<V>::min).unwrap());
         let u_yx_sum = T::indexes().map(|x| u_yx[x]).sum::<V>();
         let weights_yx = if u_yx_sum == V::zero() {
             T::from_fn(|_| V::zero())
@@ -873,11 +896,11 @@ where
             }
         });
         let wprop_u_yx = T::indexes().map(|x| weighted_u_yx[x]).sum::<V>();
-        U::map(|y| {
+        Some(U::map(|y| {
             let u = max_u_xy[y] * (wprop_u_yx + irrelevance_yx[y] - wprop_u_yx * irrelevance_yx[y]);
             let b = T::from_fn(|x| p_xy[y][x] - u * ax[x]);
             Simplex::normalized(b, u)
-        })
+        }))
     }
 }
 
@@ -887,20 +910,20 @@ where
     Cond::InvCond: Container<Y, Output = Simplex<T, V>> + ContainerMap<Y> + 'a,
     T: Container<X, Output = V> + FromFn<X, V> + IndexMut<X> + 'a,
     U: Container<Y, Output = V> + FromFn<Y, V> + IndexMut<Y>,
-    X: Copy + fmt::Debug,
+    X: Copy,
     Y: Copy,
-    V: Float + AddAssign + DivAssign + Sum + UlpsEq + fmt::Debug,
+    V: Float + AddAssign + DivAssign + Sum + UlpsEq,
 {
     type Output = Opinion<T, V>;
 
     fn abduce(self, conds: &'a Cond, ax: T) -> Option<Self::Output> {
         let ay = mbr::<X, Y, T, Cond, U, V>(&ax, conds)?;
-        Some(self.abduce_with(conds, ax, &ay))
+        self.abduce_with(conds, ax, &ay)
     }
 
-    fn abduce_with(self, conds: &'a Cond, ax: T, ay: &U) -> Self::Output {
-        let inv_conds = InverseCondition::inverse(conds, &ax, ay);
-        OpinionRef::<U, V>::from((self, ay)).deduce_with(&inv_conds, ax)
+    fn abduce_with(self, conds: &'a Cond, ax: T, ay: &U) -> Option<Self::Output> {
+        let inv_conds = InverseCondition::inverse(conds, &ax, ay)?;
+        Some(OpinionRef::<U, V>::from((self, ay)).deduce_with(&inv_conds, ax))
     }
 }
 
@@ -910,9 +933,9 @@ where
     Cond::InvCond: Container<Y, Output = Simplex<T, V>> + ContainerMap<Y> + 'a,
     T: Container<X, Output = V> + FromFn<X, V> + IndexMut<X> + 'a,
     U: Container<Y, Output = V> + FromFn<Y, V> + IndexMut<Y>,
-    X: Copy + fmt::Debug,
+    X: Copy,
     Y: Copy,
-    V: Float + AddAssign + DivAssign + Sum + UlpsEq + fmt::Debug,
+    V: Float + AddAssign + DivAssign + Sum + UlpsEq,
 {
     type Output = Opinion<T, V>;
 
@@ -920,7 +943,7 @@ where
         self.simplex.abduce(conds, ax)
     }
 
-    fn abduce_with(self, conds: &'a Cond, ax: T, ay: &U) -> Self::Output {
+    fn abduce_with(self, conds: &'a Cond, ax: T, ay: &U) -> Option<Self::Output> {
         self.simplex.abduce_with(conds, ax, ay)
     }
 }
@@ -931,9 +954,9 @@ where
     Cond::InvCond: Container<Y, Output = Simplex<T, V>> + ContainerMap<Y> + 'a,
     T: Container<X, Output = V> + FromFn<X, V> + IndexMut<X> + 'a,
     U: Container<Y, Output = V> + FromFn<Y, V> + IndexMut<Y>,
-    X: Copy + fmt::Debug,
+    X: Copy,
     Y: Copy,
-    V: Float + AddAssign + DivAssign + Sum + UlpsEq + fmt::Debug,
+    V: Float + AddAssign + DivAssign + Sum + UlpsEq,
 {
     type Output = Opinion<T, V>;
 
@@ -941,7 +964,7 @@ where
         self.as_ref().abduce(conds, ax)
     }
 
-    fn abduce_with(self, conds: &'a Cond, ax: T, ay: &U) -> Self::Output {
+    fn abduce_with(self, conds: &'a Cond, ax: T, ay: &U) -> Option<Self::Output> {
         self.as_ref().abduce_with(conds, ax, ay)
     }
 }
@@ -990,6 +1013,7 @@ where
     TX2: Container<X2, Output = V>,
     TY: Container<Y, Output = V> + FromFn<Y, V> + IndexMut<Y>,
     U: Container<X1X2, Output = V> + FromFn<X1X2, V> + IndexMut<X1X2>,
+    for<'a> U: Product2<&'a TX1, &'a TX2>,
     X1: Copy,
     X2: Copy,
     X1X2: Copy,
@@ -1008,15 +1032,15 @@ where
         ax2: &TX2,
         ay: &TY,
     ) -> Option<Self::Output> {
-        let x1_y = y_x1.inverse(ax1, &mbr(ax1, y_x1)?);
-        let x2_y = y_x2.inverse(ax2, &mbr(ax2, y_x2)?);
-
+        let x1_y = y_x1.inverse(ax1, mbr(ax1, y_x1).as_ref().unwrap_or(ay))?;
+        let x2_y = y_x2.inverse(ax2, mbr(ax2, y_x2).as_ref().unwrap_or(ay))?;
         let x12_y = CX1X2Y::from_fn(|y| {
             let x1yr = OpinionRef::from((&x1_y[y], ax1));
             let x2yr = OpinionRef::from((&x2_y[y], ax2));
             let OpinionBase { simplex, .. } = Product2::product2(x1yr, x2yr);
             simplex
         });
-        Some(x12_y.inverse(ay, &mbr(ay, &x12_y)?))
+        let ax12 = mbr(ay, &x12_y).unwrap_or_else(|| Product2::product2(ax1, ax2));
+        x12_y.inverse(ay, &ax12)
     }
 }

@@ -62,7 +62,7 @@ pub trait Abduction<Cond, X, Y, T, U> {
     /// by `conds` representing a collection of conditional opinions.
     /// If a marginal base rate cannot be computed from `conds`, return `None`.
     fn abduce(self, conds: Cond, ax: T) -> Option<Self::Output>;
-    fn abduce_with(self, conds: Cond, ax: T, ay: &U) -> Self::Output;
+    fn abduce_with(self, conds: Cond, ax: T, ay: &U) -> Option<Self::Output>;
 }
 
 pub trait Product2<T0, T1> {
