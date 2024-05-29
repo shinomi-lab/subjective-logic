@@ -119,7 +119,7 @@ impl<D0: Domain, V: Clone> Clone for MArrD1<D0, V> {
 impl<D0, V> cmp::PartialEq for MArrD1<D0, V>
 where
     D0: Domain,
-    V: fmt::Debug + cmp::PartialEq,
+    V: cmp::PartialEq,
 {
     fn eq(&self, other: &Self) -> bool {
         self.inner == other.inner
@@ -294,7 +294,7 @@ impl<D0, D1, V> cmp::PartialEq for MArrD2<D0, D1, V>
 where
     D0: Domain,
     D1: Domain,
-    V: fmt::Debug + cmp::PartialEq,
+    V: cmp::PartialEq,
 {
     fn eq(&self, other: &Self) -> bool {
         self.inner == other.inner
@@ -501,7 +501,7 @@ where
     D0: Domain,
     D1: Domain,
     D2: Domain,
-    V: fmt::Debug + cmp::PartialEq,
+    V: cmp::PartialEq,
 {
     fn eq(&self, other: &Self) -> bool {
         self.inner == other.inner

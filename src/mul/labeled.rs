@@ -1,4 +1,3 @@
-use core::fmt;
 use std::ops::{AddAssign, DivAssign};
 
 use approx::UlpsEq;
@@ -60,7 +59,7 @@ impl<'a, D0, D1, V> Product2<OpinionRefD1<'a, D0, V>, OpinionRefD1<'a, D1, V>>
 where
     D0: Domain<Idx = usize>,
     D1: Domain<Idx = usize>,
-    V: Float + AddAssign + DivAssign + fmt::Debug + UlpsEq + Default,
+    V: Float + AddAssign + DivAssign + UlpsEq + Default,
 {
     fn product2(w0: OpinionRefD1<D0, V>, w1: OpinionRefD1<D1, V>) -> Self {
         let p0 = w0.projection();
@@ -84,7 +83,7 @@ where
     D0: Domain<Idx = usize>,
     D1: Domain<Idx = usize>,
     D2: Domain<Idx = usize>,
-    V: Float + AddAssign + DivAssign + fmt::Debug + UlpsEq + Default,
+    V: Float + AddAssign + DivAssign + UlpsEq + Default,
 {
     fn product3(w0: OpinionRefD1<D0, V>, w1: OpinionRefD1<D1, V>, w2: OpinionRefD1<D2, V>) -> Self {
         let p0 = w0.projection();

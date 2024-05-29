@@ -1,7 +1,7 @@
-use std::{fmt, ops::Range};
+use std::ops::Range;
 
 pub trait Domain {
-    type Idx: Into<usize> + Clone + fmt::Debug;
+    type Idx: Into<usize> + Clone;
     const LEN: usize;
 }
 

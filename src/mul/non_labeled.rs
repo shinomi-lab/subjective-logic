@@ -1,5 +1,5 @@
 use std::{
-    array, fmt,
+    array,
     ops::{AddAssign, DivAssign, Range},
     usize,
 };
@@ -77,7 +77,7 @@ where
 impl<'a, V, const D0: usize, const D1: usize>
     Product2<Opinion1dRef<'a, V, D0>, Opinion1dRef<'a, V, D1>> for Opinion<MArr2<V, D0, D1>, V>
 where
-    V: Float + AddAssign + DivAssign + fmt::Debug + UlpsEq,
+    V: Float + AddAssign + DivAssign + UlpsEq,
 {
     fn product2(w0: Opinion1dRef<V, D0>, w1: Opinion1dRef<V, D1>) -> Self {
         let p = MArr2::product2(&w0.projection(), &w1.projection());
@@ -95,7 +95,7 @@ impl<'a, V, const D0: usize, const D1: usize, const D2: usize>
     Product3<Opinion1dRef<'a, V, D0>, Opinion1dRef<'a, V, D1>, Opinion1dRef<'a, V, D2>>
     for Opinion<MArr3<V, D0, D1, D2>, V>
 where
-    V: Float + AddAssign + DivAssign + fmt::Debug + UlpsEq,
+    V: Float + AddAssign + DivAssign + UlpsEq,
 {
     fn product3(w0: Opinion1dRef<V, D0>, w1: Opinion1dRef<V, D1>, w2: Opinion1dRef<V, D2>) -> Self {
         let p = MArr3::product3(&w0.projection(), &w1.projection(), &w2.projection());
