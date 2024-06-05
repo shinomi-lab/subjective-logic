@@ -147,6 +147,9 @@ mod tests {
     struct Z;
     impl_domain!(Z = 2);
 
+    struct W;
+    impl_domain!(W from X);
+
     #[test]
     fn test_prod2() {
         macro_rules! def {
@@ -578,9 +581,6 @@ mod tests {
         assert_eq!(nround_arr!(f32, 2, wx.projection()), [65.0, 26.0, 9.0]);
     }
 
-    struct W;
-    impl_domain!(W from X);
-
     #[test]
     fn test_conv() {
         let wx = SimplexD1::<X, _>::try_from((vec![0.5, 0.0], 0.5)).unwrap();
@@ -633,5 +633,25 @@ mod tests {
             MArrD1::<Y, _>::merge_cond2(&cyz, &cyx, &az, &ax, &ay);
         assert!(cyzx.is_some());
         println!("{cyxz:?}");
+    }
+
+    #[test]
+    fn test_merge() {
+        let cwx = marr_d1!(X; [
+            SimplexD1::<W, f32>::new(marr_d1![0.8794401, 0.06652332], 0.054036554),
+            SimplexD1::<W, f32>::new(marr_d1![0.56360114, 0.18364121], 0.25275767),
+        ]);
+        let cwz = marr_d1!(Z; [
+            SimplexD1::<W, f32>::new(marr_d1![0.96404135, 0.022954445], 0.01300419),
+            SimplexD1::<W, f32>::new(marr_d1![0.30360186, 0.34915215], 0.34724593),
+        ]);
+
+        let ax = marr_d1!(X; [0.999, 0.001]);
+        let az = marr_d1!(Z; [0.999, 0.001]);
+        let aw = marr_d1!(W; [0.999, 0.001]);
+
+        let cwzx: Option<MArrD2<Z, X, _>> = MArrD1::<W, _>::merge_cond2(&cwz, &cwx, &az, &ax, &aw);
+
+        println!("{:?}", cwzx);
     }
 }

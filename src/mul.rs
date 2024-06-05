@@ -862,7 +862,7 @@ where
                 temp[y][x] = V::one();
                 let p = p_yx[x][y];
                 let q = T::indexes().map(|xd| ax[xd] * p_yx[xd][y]).sum::<V>();
-                if approx_ext::is_zero(q) && approx_ext::is_zero(p) {
+                if q == V::zero() && p == V::zero() {
                     return None;
                 }
                 temp[y][x] = p / q;
@@ -1012,7 +1012,7 @@ where
     TX1: Container<X1, Output = V>,
     TX2: Container<X2, Output = V>,
     TY: Container<Y, Output = V> + FromFn<Y, V> + IndexMut<Y>,
-    U: Container<X1X2, Output = V> + FromFn<X1X2, V> + IndexMut<X1X2>,
+    U: Container<X1X2, Output = V> + FromFn<X1X2, V> + IndexMut<X1X2> + std::fmt::Debug,
     for<'a> U: Product2<&'a TX1, &'a TX2>,
     X1: Copy,
     X2: Copy,
@@ -1041,6 +1041,7 @@ where
             simplex
         });
         let ax12 = mbr(ay, &x12_y).unwrap_or_else(|| Product2::product2(ax1, ax2));
+        println!("{:?}", ax12);
         x12_y.inverse(ay, &ax12)
     }
 }
