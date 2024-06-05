@@ -1012,7 +1012,7 @@ where
     TX1: Container<X1, Output = V>,
     TX2: Container<X2, Output = V>,
     TY: Container<Y, Output = V> + FromFn<Y, V> + IndexMut<Y>,
-    U: Container<X1X2, Output = V> + FromFn<X1X2, V> + IndexMut<X1X2> + std::fmt::Debug,
+    U: Container<X1X2, Output = V> + FromFn<X1X2, V> + IndexMut<X1X2>,
     for<'a> U: Product2<&'a TX1, &'a TX2>,
     X1: Copy,
     X2: Copy,
@@ -1041,7 +1041,6 @@ where
             simplex
         });
         let ax12 = mbr(ay, &x12_y).unwrap_or_else(|| Product2::product2(ax1, ax2));
-        println!("{:?}", ax12);
         x12_y.inverse(ay, &ax12)
     }
 }
