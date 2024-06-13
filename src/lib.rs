@@ -16,10 +16,10 @@ mod tests {
     use approx::{assert_relative_eq, assert_ulps_eq};
 
     use crate::{
-        bi::{BOpinion, BSimplex},
+        bi::BOpinion,
         marr2, marr3,
         mul::{Opinion, OpinionRef, Simplex},
-        ops::{Deduction, Projection},
+        ops::Deduction,
     };
 
     #[test]
@@ -122,23 +122,6 @@ mod tests {
     }
 
     #[test]
-    fn test_deduction_bop() {
-        let cond = [
-            BSimplex::<f32>::new(0.90, 0.02, 0.08),
-            BSimplex::<f32>::new(0.40, 0.52, 0.08),
-        ];
-        let w = BOpinion::<f32>::new(0.00, 0.38, 0.62, 0.5);
-        println!("{}", w.deduce(&cond, 0.5));
-
-        let cond = [
-            BSimplex::<f32>::new(0.72, 0.18, 0.1),
-            BSimplex::<f32>::new(0.13, 0.57, 0.3),
-        ];
-        let w = BOpinion::<f32>::new(0.7, 0.0, 0.3, 0.33);
-        println!("{}", w.deduce(&cond, 0.5));
-    }
-
-    #[test]
     fn test_deduction_mop() {
         let a = [0.5, 0.5];
         let s = Simplex::new([0.0, 0.9], 0.1);
@@ -151,65 +134,6 @@ mod tests {
         let w2 = w.deduce_with(&conds, ay);
         let w3 = OpinionRef::from((&s, &a)).deduce_with(&conds, ay);
         assert_eq!(w2, w3);
-    }
-
-    #[test]
-    fn test_deduction() {
-        let b_a = 1.0;
-        let b_xa = 0.0;
-        let wa = Opinion::new([b_a, 0.0, 0.0], 1.0 - b_a, [0.25, 0.25, 0.5]);
-        let wxa = [
-            BSimplex::<f32>::new(b_xa, 0.0, 1.0 - b_xa),
-            BSimplex::<f32>::new(0.0, 0.0, 1.0),
-            BSimplex::<f32>::new(0.0, 0.0, 1.0),
-        ];
-        println!("{}", wxa[0]);
-        let x: BOpinion<f32> = wa.deduce_with(&wxa, [0.5, 0.5]).into();
-        println!("{}", x.projection());
-    }
-
-    #[test]
-    fn test_deduction1() {
-        let w = BOpinion::<f32>::new(0.7, 0.0, 0.3, 1.0 / 3.0);
-        let cond = [
-            BSimplex::<f32>::new(0.72, 0.18, 0.1),
-            BSimplex::<f32>::new(0.13, 0.57, 0.3),
-        ];
-        println!("{}", w.deduce(&cond, 0.5));
-
-        let wx = Opinion::new([0.7, 0.0], 0.3, [1.0 / 3.0, 2.0 / 3.0]);
-        let wyx = [
-            Simplex::new([0.72, 0.18], 0.1),
-            Simplex::new([0.13, 0.57], 0.3),
-        ];
-        println!("{:?}", wx.as_ref().deduce_with(&wyx, [0.5, 0.5]));
-    }
-
-    #[test]
-    fn test_deduction2() {
-        let wa = Opinion::new([0.7, 0.1, 0.0], 0.2, [0.3, 0.3, 0.4]);
-        let wxa = [
-            BSimplex::<f32>::new(0.7, 0.0, 0.3),
-            BSimplex::<f32>::new(0.0, 0.7, 0.3),
-            BSimplex::<f32>::new(0.0, 0.0, 1.0),
-        ];
-        let wx: BOpinion<f32> = wa.deduce_with(&wxa, [0.5, 0.5]).into();
-        println!("{}|{}", wx, wx.projection());
-
-        let wxa = [
-            Simplex::new([0.7, 0.0], 0.3),
-            Simplex::new([0.0, 0.7], 0.3),
-            Simplex::new([0.0, 0.0], 1.0),
-        ];
-        let wx = wa.as_ref().deduce_with(&wxa, [0.5, 0.5]);
-        println!("{:?}|{}", wx, wx.projection()[0]);
-
-        let wa = BOpinion::<f32>::new(0.7, 0.1, 0.2, 0.5);
-        let wxa = [
-            BSimplex::<f32>::new(0.7, 0.0, 0.3),
-            BSimplex::<f32>::new(0.0, 0.7, 0.3),
-        ];
-        println!("{}", wa.deduce(&wxa, 0.5));
     }
 
     #[test]

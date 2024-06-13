@@ -636,6 +636,49 @@ mod tests {
     }
 
     #[test]
+    fn test_merge_joint_conds2() {
+        let cwx = marr_d1!(X; [
+            SimplexD1::<W, f64>::new(marr_d1![0.65, 0.0], 0.35),
+            SimplexD1::<W, f64>::new(marr_d1![0.0, 0.9], 0.1),
+        ]);
+        let cwz = marr_d1!(Z; [
+            SimplexD1::<W, f64>::new(marr_d1![0.65, 0.0], 0.35),
+            // SimplexD1::<W, f64>::new(marr_d1![0.5, 0.0], 0.5),
+            SimplexD1::<W, f64>::new(marr_d1![0.0, 0.9], 0.1),
+        ]);
+        let ax = marr_d1!(X; [0.999, 0.01]);
+        let az = marr_d1!(Z; [0.999, 0.01]);
+        let aw = marr_d1!(W; [0.999, 0.01]);
+
+        println!("{:?}", cwz[0].projection(&mbr(&az, &cwz).unwrap()));
+        println!("{:?}", cwz[1].projection(&mbr(&az, &cwz).unwrap()));
+        println!("{:?}", cwz[0].projection(&aw));
+        println!("{:?}", cwz[1].projection(&aw));
+
+        let cwxz: MArrD2<X, Z, _> = MArrD1::<W, _>::merge_cond2(&cwx, &cwz, &ax, &az, &aw).unwrap();
+        println!("{:?}", cwxz[(0, 0)]);
+        println!("{:?}", cwxz[(1, 0)]);
+        println!("{:?}", cwxz[(0, 1)]);
+        println!("{:?}", cwxz[(1, 1)]);
+
+        let x = OpinionD1::<X, _>::vacuous_with(marr_d1![0.5, 0.5]);
+        let cwx_z0 = marr_d1!(Z; [
+            cwxz[(0, 0)].clone(),
+            cwxz[(1, 0)].clone(),
+        ]);
+        let cwx_z1 = marr_d1!(Z; [
+            cwxz[(0, 1)].clone(),
+            cwxz[(1, 1)].clone(),
+        ]);
+        let cw_z0 = x.clone().deduce_with(&cwx_z0, aw.clone());
+        let cw_z1 = x.deduce_with(&cwx_z1, aw.clone());
+        let cw = marr_d1!(Z; [cw_z0.simplex, cw_z1.simplex]);
+
+        println!("{:?}", cw[0]);
+        println!("{:?}", cw[1]);
+    }
+
+    #[test]
     fn test_merge() {
         let cwx = marr_d1!(X; [
             SimplexD1::<W, f32>::new(marr_d1![0.8794401, 0.06652332], 0.054036554),

@@ -763,6 +763,47 @@ where
     Cond::map(|x| conds[x].into().projection(ay))
 }
 
+fn deduce_of<'a, X, Y, Cond, U, T, V>(
+    wx: OpinionRef<'a, T, V>,
+    conds: &'a Cond,
+    ay: U,
+) -> Opinion<U, V>
+where
+    T: Container<X, Output = V> + FromFn<X, V> + IndexMut<X>,
+    Cond: Container<X> + ContainerMap<X>,
+    for<'b> &'b Cond::Output: Into<&'b Simplex<U, V>>,
+    U: Container<Y, Output = V> + FromFn<Y, V> + IndexMut<Y>,
+    X: Copy,
+    Y: Copy,
+    V: Float + Sum + UlpsEq + AddAssign + DivAssign,
+{
+    let cond_p = projections(conds, &ay);
+    let pyhx: U = U::from_fn(|y| {
+        wx.base_rate
+            .iter_with()
+            .map(|(x, &a)| a * cond_p[x][y])
+            .sum()
+    });
+    let uyhx = U::indexes()
+        .map(|y| {
+            (pyhx[y]
+                - Cond::indexes()
+                    .map(|x| conds[x].into().belief[y])
+                    .reduce(<V>::min)
+                    .unwrap())
+                / ay[y]
+        })
+        .reduce(<V>::min)
+        .unwrap();
+    let u = uyhx
+        - Cond::indexes()
+            .map(|x| (uyhx - conds[x].into().uncertainty) * wx.b()[x])
+            .sum::<V>();
+    let p = wx.projection();
+    let b = U::from_fn(|y| T::indexes().map(|x| p[x] * cond_p[x][y]).sum::<V>() - ay[y] * u);
+    Opinion::<U, V>::from((Simplex::normalized(b, u), ay))
+}
+
 impl<'a, X, Y, Cond, U, T, V> Deduction<X, Y, &'a Cond, U> for OpinionRef<'a, T, V>
 where
     T: Container<X, Output = V> + FromFn<X, V> + IndexMut<X>,
@@ -781,31 +822,8 @@ where
     }
 
     fn deduce_with(self, conds: &'a Cond, ay: U) -> Self::Output {
-        let cond_p = projections(conds, &ay);
-        let pyhx: U = U::from_fn(|y| {
-            self.base_rate
-                .iter_with()
-                .map(|(x, &a)| a * cond_p[x][y])
-                .sum()
-        });
-        let uyhx = U::indexes()
-            .map(|y| {
-                (pyhx[y]
-                    - Cond::indexes()
-                        .map(|x| conds[x].into().belief[y])
-                        .reduce(<V>::min)
-                        .unwrap())
-                    / ay[y]
-            })
-            .reduce(<V>::min)
-            .unwrap();
-        let u = uyhx
-            - Cond::indexes()
-                .map(|x| (uyhx - conds[x].into().uncertainty) * self.b()[x])
-                .sum::<V>();
-        let p = self.projection();
-        let b = U::from_fn(|y| T::indexes().map(|x| p[x] * cond_p[x][y]).sum::<V>() - ay[y] * u);
-        Opinion::<U, V>::from((Simplex::normalized(b, u), ay))
+        let ay = mbr::<X, Y, T, Cond, U, V>(&self.base_rate, conds).unwrap_or(ay);
+        deduce_of(self, conds, ay)
     }
 }
 
