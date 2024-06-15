@@ -22,6 +22,19 @@ where
     iter: Option<<&'a S as IntoIterator>::IntoIter>,
 }
 
+impl<'a, S> Clone for Iter<'a, S>
+where
+    &'a S: IntoIterator,
+    <&'a S as IntoIterator>::IntoIter: Clone,
+{
+    fn clone(&self) -> Self {
+        Self {
+            iters: self.iters.clone(),
+            iter: self.iter.clone(),
+        }
+    }
+}
+
 impl<'a, S> Iter<'a, S>
 where
     &'a S: IntoIterator,
@@ -927,7 +940,7 @@ mod tests {
     }
 
     #[test]
-    fn test_values() {
+    fn test_iter() {
         let ma = MArrD1::<X, _>::from_iter([0, 1]);
         for (i, v) in ma.into_iter().enumerate() {
             assert_eq!(*v, i);
@@ -942,6 +955,34 @@ mod tests {
         ]);
         for (i, v) in ma.into_iter().enumerate() {
             assert_eq!(*v, i);
+        }
+    }
+
+    #[test]
+    fn test_clone_iter() {
+        let ma = MArrD1::<X, _>::from_iter([0, 1]);
+        let iter = ma.iter();
+        let ma2 = MArrD1::<X, _>::from_iter(iter.clone().cloned());
+        for x in X::keys() {
+            assert_eq!(ma[x], ma2[x]);
+        }
+        let ma2 = MArrD1::<X, _>::from_iter(iter.clone().cloned());
+        for x in X::keys() {
+            assert_eq!(ma[x], ma2[x]);
+        }
+        let ma = MArrD2::<X, Y, _>::from_multi_iter([[0, 1, 2], [3, 4, 5]]);
+        let iter = ma.iter();
+        let ma2 = MArrD2::<X, Y, _>::from_iter(iter.clone().cloned());
+        for x in X::keys() {
+            for y in Y::keys() {
+                assert_eq!(ma[(x, y)], ma2[(x, y)]);
+            }
+        }
+        let ma2 = MArrD2::<X, Y, _>::from_iter(iter.clone().cloned());
+        for x in X::keys() {
+            for y in Y::keys() {
+                assert_eq!(ma[(x, y)], ma2[(x, y)]);
+            }
         }
     }
 
