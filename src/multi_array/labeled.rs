@@ -489,6 +489,10 @@ where
     pub fn down(&self, idx: D0::Idx) -> &MArrD1<D1, V> {
         &self.inner[idx]
     }
+
+    pub fn down_mut(&mut self, idx: D0::Idx) -> &mut MArrD1<D1, V> {
+        self.inner.index_mut(idx)
+    }
 }
 
 pub struct MArrD3<D0: Domain, D1: Domain, D2: Domain, V> {
@@ -725,6 +729,10 @@ where
 
     pub fn down(&self, idx: D0::Idx) -> &MArrD2<D1, D2, V> {
         &self.inner[idx]
+    }
+
+    pub fn down_mut(&mut self, idx: D0::Idx) -> &mut MArrD2<D1, D2, V> {
+        self.inner.index_mut(idx)
     }
 }
 
@@ -1191,5 +1199,25 @@ mod tests {
         let mw: MArrD1<W, _> = mx.conv();
         assert_eq!(X::LEN, W::LEN);
         assert_eq!(mw.inner, vec![1, 2]);
+    }
+
+    #[test]
+    fn test_down() {
+        let mut ma = MArrD2::<X, Y, _>::from_multi_iter([[0, 1, 2], [3, 4, 5]]);
+        assert_eq!(ma.down(0), &marr_d1!(Y; [0, 1, 2]));
+        assert_eq!(ma.down(1), &marr_d1!(Y; [3, 4, 5]));
+        let a = marr_d1!(Y; [8, 7, 6]);
+        *ma.down_mut(1) = a;
+        assert_eq!(ma.down(1), &marr_d1!(Y; [8, 7, 6]));
+
+        let mut ma = MArrD3::<X, Y, Z, _>::from_multi_iter([
+            [[0, 1], [2, 3], [4, 5]],
+            [[6, 7], [8, 9], [10, 11]],
+        ]);
+        assert_eq!(ma.down(0), &marr_d2!(Y, Z; [[0, 1], [2, 3], [4, 5]]));
+        assert_eq!(ma.down(1), &marr_d2!(Y, Z; [[6, 7], [8, 9], [10, 11]]));
+        let a = marr_d2!(Y, Z; [[9, 8], [7, 6], [5, 4]]);
+        *ma.down_mut(1) = a;
+        assert_eq!(ma.down(1), &marr_d2!(Y, Z; [[9, 8], [7, 6], [5, 4]]));
     }
 }
