@@ -304,6 +304,17 @@ impl<T, V> OpinionRef<'_, T, V> {
     {
         self.simplex.is_dogmatic()
     }
+
+    pub fn cloned(self) -> Opinion<T, V>
+    where
+        T: Clone,
+        V: Clone,
+    {
+        OpinionBase {
+            simplex: self.simplex.clone(),
+            base_rate: self.base_rate.clone(),
+        }
+    }
 }
 
 impl<S, T> From<(S, T)> for OpinionBase<S, T> {
