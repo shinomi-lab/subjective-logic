@@ -1,12 +1,14 @@
-use std::ops::{AddAssign, DivAssign};
+use std::{
+    fmt::Debug,
+    ops::{AddAssign, DivAssign},
+};
 
 use approx::UlpsEq;
 use itertools::izip;
 use num_traits::Float;
 
 use crate::{
-    domain::Domain,
-    domain::DomainConv,
+    domain::{Domain, DomainConv, Keys},
     errors::InvalidValueError,
     multi_array::labeled::{product2_iter, product3_iter, MArrD1, MArrD2, MArrD3},
     ops::{Product2, Product3, Projection},
@@ -19,7 +21,7 @@ pub type SimplexD1<D0, V> = Simplex<MArrD1<D0, V>, V>;
 
 impl<D0, V> TryFrom<(Vec<V>, V)> for SimplexD1<D0, V>
 where
-    D0: Domain<Idx = usize>,
+    D0: Domain<Idx: Debug> + Keys<D0::Idx>,
     V: Float + AddAssign + UlpsEq,
 {
     type Error = InvalidValueError;
@@ -57,12 +59,12 @@ pub type OpinionRefD1<'a, D0, V> = OpinionRef<'a, MArrD1<D0, V>, V>;
 impl<'a, D0, D1, V> Product2<OpinionRefD1<'a, D0, V>, OpinionRefD1<'a, D1, V>>
     for OpinionD2<D0, D1, V>
 where
-    D0: Domain<Idx = usize>,
-    D1: Domain<Idx = usize>,
+    D0: Domain<Idx: Debug + Copy> + Keys<D0::Idx>,
+    D1: Domain<Idx: Debug + Copy> + Keys<D1::Idx>,
     V: Float + AddAssign + DivAssign + UlpsEq + Default,
 {
     fn product2(w0: OpinionRefD1<D0, V>, w1: OpinionRefD1<D1, V>) -> Self {
-        let p0 = w0.projection();
+        let p0: MArrD1<_, _> = w0.projection();
         let p1 = w1.projection();
         let p_iter = product2_iter(&p0, &p1);
         let b_iter = product2_iter(&w0.simplex.belief, &w1.simplex.belief);
@@ -80,9 +82,9 @@ impl<'a, D0, D1, D2, V>
     Product3<OpinionRefD1<'a, D0, V>, OpinionRefD1<'a, D1, V>, OpinionRefD1<'a, D2, V>>
     for OpinionD3<D0, D1, D2, V>
 where
-    D0: Domain<Idx = usize>,
-    D1: Domain<Idx = usize>,
-    D2: Domain<Idx = usize>,
+    D0: Domain<Idx: Debug + Copy> + Keys<D0::Idx>,
+    D1: Domain<Idx: Debug + Copy> + Keys<D1::Idx>,
+    D2: Domain<Idx: Debug + Copy> + Keys<D2::Idx>,
     V: Float + AddAssign + DivAssign + UlpsEq + Default,
 {
     fn product3(w0: OpinionRefD1<D0, V>, w1: OpinionRefD1<D1, V>, w2: OpinionRefD1<D2, V>) -> Self {

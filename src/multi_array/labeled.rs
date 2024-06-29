@@ -243,9 +243,9 @@ impl<D0: Domain + Keys<D0::Idx>, V> FromFn<D0::Idx, V> for MArrD1<D0, V> {
     }
 }
 
-impl<D0: Domain<Idx = usize>, V> Container<D0::Idx> for MArrD1<D0, V> {}
+impl<D0: Domain + Keys<D0::Idx>, V> Container<D0::Idx> for MArrD1<D0, V> {}
 
-impl<D0: Domain<Idx = usize>, V> ContainerMap<D0::Idx> for MArrD1<D0, V> {
+impl<D0: Domain + Keys<D0::Idx>, V> ContainerMap<D0::Idx> for MArrD1<D0, V> {
     type Map<U> = MArrD1<D0, U>;
 }
 
