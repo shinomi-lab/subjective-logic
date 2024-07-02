@@ -283,6 +283,10 @@ where
     pub fn iter_mut(&mut self) -> <&mut Self as IntoIterator>::IntoIter {
         self.into_iter()
     }
+
+    pub fn as_ref(&self) -> MArrD1<D0, &V> {
+        MArrD1::from_iter(self.iter())
+    }
 }
 
 pub struct MArrD2<D0: Domain, D1: Domain, V> {
@@ -1219,5 +1223,14 @@ mod tests {
         let a = marr_d2!(Y, Z; [[9, 8], [7, 6], [5, 4]]);
         *ma.down_mut(1) = a;
         assert_eq!(ma.down(1), &marr_d2!(Y, Z; [[9, 8], [7, 6], [5, 4]]));
+    }
+
+    #[test]
+    fn to_ref() {
+        let a = marr_d1!(X; [1, 2]);
+        let b = a.as_ref();
+        for x in X::keys() {
+            assert_eq!(a[x], *b[x]);
+        }
     }
 }

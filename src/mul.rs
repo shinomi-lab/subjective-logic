@@ -5,6 +5,7 @@ use approx::{ulps_eq, UlpsEq};
 use core::fmt;
 use num_traits::Float;
 use std::{
+    borrow::Borrow,
     fmt::Debug,
     iter::Sum,
     ops::{AddAssign, DivAssign, Index, IndexMut},
@@ -738,20 +739,19 @@ where
 pub fn mbr<'a, X, Y, T, Cond, U, V>(ax: &T, conds: &'a Cond) -> Option<U>
 where
     T: Index<X, Output = V>,
-    Cond: Container<X>,
-    for<'b> &'b Cond::Output: Into<&'b Simplex<U, V>>,
+    Cond: Container<X, Output: Borrow<Simplex<U, V>>>,
     U: Container<Y, Output = V> + FromFn<Y, V> + IndexMut<Y>,
     X: Copy,
     Y: Copy,
     V: Float + Sum + UlpsEq + AddAssign + DivAssign,
 {
-    if Cond::indexes().all(|x| conds[x].into().is_vacuous()) {
+    if Cond::indexes().all(|x| conds[x].borrow().is_vacuous()) {
         return None;
     }
     let mut sum_a = V::zero();
     let mut ay = U::from_fn(|y| {
         let a = Cond::indexes()
-            .map(|x| ax[x] * conds[x].into().belief[y.clone()])
+            .map(|x| ax[x] * conds[x].borrow().belief[y.clone()])
             .sum::<V>();
         sum_a += a;
         a
@@ -765,13 +765,11 @@ where
 fn projections<'a, X, Y, Cond, U, V>(conds: &'a Cond, ay: &U) -> Cond::Map<U>
 where
     Y: Copy,
-    Cond: Index<X> + ContainerMap<X>,
-    Cond::Output: 'a,
-    &'a Cond::Output: Into<&'a Simplex<U, V>>,
+    Cond: Index<X, Output: Borrow<Simplex<U, V>>> + ContainerMap<X>,
     U: Container<Y, Output = V> + FromFn<Y, V> + IndexMut<Y> + 'a,
     V: Float + AddAssign + DivAssign + 'a,
 {
-    Cond::map(|x| conds[x].into().projection(ay))
+    Cond::map(|x| Simplex::projection(conds[x].borrow(), ay))
 }
 
 fn deduce_of<'a, X, Y, Cond, U, T, V>(
@@ -781,8 +779,7 @@ fn deduce_of<'a, X, Y, Cond, U, T, V>(
 ) -> Opinion<U, V>
 where
     T: Container<X, Output = V> + FromFn<X, V> + IndexMut<X>,
-    Cond: Container<X> + ContainerMap<X>,
-    for<'b> &'b Cond::Output: Into<&'b Simplex<U, V>>,
+    Cond: Container<X, Output: Borrow<Simplex<U, V>>> + ContainerMap<X>,
     U: Container<Y, Output = V> + FromFn<Y, V> + IndexMut<Y>,
     X: Copy,
     Y: Copy,
@@ -799,7 +796,7 @@ where
         .map(|y| {
             (pyhx[y]
                 - Cond::indexes()
-                    .map(|x| conds[x].into().belief[y])
+                    .map(|x| conds[x].borrow().belief[y])
                     .reduce(<V>::min)
                     .unwrap())
                 / ay[y]
@@ -808,7 +805,7 @@ where
         .unwrap();
     let u = uyhx
         - Cond::indexes()
-            .map(|x| (uyhx - conds[x].into().uncertainty) * wx.b()[x])
+            .map(|x| (uyhx - conds[x].borrow().uncertainty) * wx.b()[x])
             .sum::<V>();
     let p = wx.projection();
     let b = U::from_fn(|y| T::indexes().map(|x| p[x] * cond_p[x][y]).sum::<V>() - ay[y] * u);
@@ -818,8 +815,7 @@ where
 impl<'a, X, Y, Cond, U, T, V> Deduction<X, Y, &'a Cond, U> for OpinionRef<'a, T, V>
 where
     T: Container<X, Output = V> + FromFn<X, V> + IndexMut<X>,
-    Cond: Container<X> + ContainerMap<X>,
-    for<'b> &'b Cond::Output: Into<&'b Simplex<U, V>>,
+    Cond: Container<X, Output: Borrow<Simplex<U, V>>> + ContainerMap<X>,
     U: Container<Y, Output = V> + FromFn<Y, V> + IndexMut<Y>,
     X: Copy,
     Y: Copy,
@@ -841,8 +837,7 @@ where
 impl<'a, X, Y, Cond, U, T, V> Deduction<X, Y, &'a Cond, U> for &'a Opinion<T, V>
 where
     T: Container<X, Output = V> + FromFn<X, V> + IndexMut<X>,
-    Cond: Container<X> + ContainerMap<X>,
-    for<'b> &'b Cond::Output: Into<&'b Simplex<U, V>>,
+    Cond: Container<X, Output: Borrow<Simplex<U, V>>> + ContainerMap<X>,
     U: Container<Y, Output = V> + FromFn<Y, V> + IndexMut<Y>,
     X: Copy,
     Y: Copy,

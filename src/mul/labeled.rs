@@ -553,6 +553,42 @@ mod tests {
     }
 
     #[test]
+    fn test_deduction_ref1() {
+        let wx = OpinionD1::<X, _>::new(marr_d1![0.9, 0.0], 0.1, marr_d1![0.1, 0.9]);
+        let wxy0 = SimplexD1::<Y, _>::new(marr_d1![0.0, 0.8, 0.1], 0.1);
+        let wxy1 = SimplexD1::<Y, _>::new(marr_d1![0.7, 0.0, 0.1], 0.2);
+        let wxy = MArrD1::<X, _>::new(vec![wxy0, wxy1]);
+        let wy = wx.deduce(&wxy);
+        let wy_ref = wx.deduce(&wxy.as_ref());
+        assert!(wy.is_some());
+        assert_eq!(wy, wy_ref);
+    }
+
+    #[test]
+    fn test_deduction_ref2() {
+        let wx = OpinionD1::<X, _>::new(marr_d1![0.9, 0.0], 0.1, marr_d1![0.1, 0.9]);
+        let wy = OpinionD1::<Y, _>::new(marr_d1![0.3, 0.4, 0.2], 0.1, marr_d1![0.5, 0.2, 0.3]);
+        let wxy = OpinionD2::product2(&wx, &wy);
+
+        let wxyz0 = marr_d1!(Y; [
+            SimplexD1::<Z, _>::new(marr_d1![0.8, 0.1], 0.1),
+            SimplexD1::<Z, _>::new(marr_d1![0.5, 0.4], 0.1),
+            SimplexD1::<Z, _>::new(marr_d1![0.2, 0.7], 0.1),
+        ]);
+        let wxyz1 = marr_d1!(Y; [
+            SimplexD1::<Z, _>::new(marr_d1![0.1, 0.7], 0.2),
+            SimplexD1::<Z, _>::new(marr_d1![0.4, 0.4], 0.2),
+            SimplexD1::<Z, _>::new(marr_d1![0.7, 0.1], 0.2),
+        ]);
+        let wxyz_ref = MArrD2::<X, _, _>::new(vec![wxyz0.as_ref(), wxyz1.as_ref()]);
+        let wz_ref = wxy.deduce(&wxyz_ref);
+        let wxyz = MArrD2::<X, _, _>::new(vec![wxyz0, wxyz1]);
+        let wz = wxy.deduce(&wxyz);
+        assert!(wz.is_some());
+        assert_eq!(wz_ref, wz);
+    }
+
+    #[test]
     fn test_abduction() {
         let conds = [
             SimplexD1::new_unchecked(marr_d1!(Y;[0.25, 0.04, 0.00]), 0.71),
