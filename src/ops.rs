@@ -52,7 +52,7 @@ pub trait Deduction<X, Y, Cond, U>: Sized {
 
     /// Computes the conditionally deduced opinion of `self` with a base rate `ay`,
     /// which will be used insted of MBR if MBR cannot be computed.
-    fn deduce_with(self, conds: Cond, ay: U) -> Self::Output;
+    fn deduce_with<F: FnOnce() -> U>(self, conds: Cond, f: F) -> Self::Output;
 }
 
 /// The abduction operator.
@@ -63,7 +63,7 @@ pub trait Abduction<Cond, X, Y, T, U> {
     /// by `conds` representing a collection of conditional opinions.
     /// If a marginal base rate cannot be computed from `conds`, return `None`.
     fn abduce(self, conds: Cond, ax: T) -> Option<Self::Output>;
-    fn abduce_with(self, conds: Cond, ax: T, ay: &U) -> Option<Self::Output>;
+    fn abduce_with(self, conds: Cond, ax: T, ay: &U) -> Self::Output;
 }
 
 pub trait Product2<T0, T1> {

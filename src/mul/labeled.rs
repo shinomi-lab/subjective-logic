@@ -130,7 +130,7 @@ mod tests {
         impl_domain,
         iter::Container,
         marr_d1, marr_d2,
-        mul::{check_base_rate, mbr},
+        mul::{check_base_rate, mbr, InverseCondition},
         multi_array::labeled::{MArrD1, MArrD2},
         ops::{
             Abduction, Deduction, Discount, Fuse, FuseAssign, FuseOp, MaxUncertainty, Product2,
@@ -621,16 +621,39 @@ mod tests {
     use super::super::MergeJointConditions2;
 
     #[test]
+    fn test_inv() {
+        let cyx1 = marr_d1!(X; [
+            SimplexD1::<Y, f64>::new(marr_d1![0.4, 0.0, 0.2], 0.4),
+            SimplexD1::<Y, f64>::new(marr_d1![0.4, 0.0, 0.2], 0.4),
+        ]);
+        let k = 0.01;
+        let cyx2 = marr_d1!(X; [
+            // SimplexD1::<Y, f64>::new(marr_d1![0.4, k, 0.2], 0.4),
+            SimplexD1::<Y, f64>::new(marr_d1![0.4 - k * 2.0, k * 2.0, 0.2], 0.4),
+            SimplexD1::<Y, f64>::new(marr_d1![0.4 - k, k, 0.2], 0.4),
+        ]);
+
+        let ax = marr_d1!(X; [0.5, 0.5]);
+        let ay = marr_d1!(Y; [0.1, 0.1, 0.8]);
+
+        let cxy1 = cyx1.inverse(&ax, mbr(&ax, &cyx1).as_ref().unwrap_or(&ay));
+        let cxy2 = cyx2.inverse(&ax, mbr(&ax, &cyx2).as_ref().unwrap_or(&ay));
+
+        println!("{:?}", cxy1);
+        println!("{:?}", cxy2);
+    }
+
+    #[test]
     fn test_merge_joint_conds() {
         // let k = 0.0001;
-        let k = 0.00001;
+        let k = 0.01;
         let cyx = marr_d1!(X; [
             SimplexD1::<Y, f64>::new(marr_d1![0.4, 0.0, 0.2], 0.4),
-            SimplexD1::<Y, f64>::new(marr_d1![0.4, 0.0 + k, 0.2], 0.4 - k),
+            SimplexD1::<Y, f64>::new(marr_d1![0.4, 0.0, 0.2], 0.4),
         ]);
         let cyz = marr_d1!(Z; [
-            SimplexD1::<Y, f64>::new(marr_d1![0.2, 0.2, 0.0], 0.6),
-            SimplexD1::<Y, f64>::new(marr_d1![0.2, 0.2, k], 0.6 - k),
+            SimplexD1::<Y, f64>::new(marr_d1![0.4, 0.0, 0.2], 0.4),
+            SimplexD1::<Y, f64>::new(marr_d1![0.4,   k, 0.2], 0.4 - k),
         ]);
         let ax = marr_d1!(X; [0.5, 0.5]);
         let az = marr_d1!(Z; [0.5, 0.5]);
@@ -641,15 +664,13 @@ mod tests {
         println!("{:?}", cyz[0].projection(&ay));
         println!("{:?}", cyz[1].projection(&ay));
 
-        let cyxz: Option<MArrD2<X, Z, SimplexD1<Y, f64>>> =
+        let cyxz: MArrD2<X, Z, SimplexD1<Y, f64>> =
             MArrD1::<Y, _>::merge_cond2(&cyx, &cyz, &ax, &az, &ay);
-        assert!(cyxz.is_some());
         println!("{cyxz:?}");
 
-        let cyzx: Option<MArrD2<Z, X, SimplexD1<Y, f64>>> =
+        let cyzx: MArrD2<Z, X, SimplexD1<Y, f64>> =
             MArrD1::<Y, _>::merge_cond2(&cyz, &cyx, &az, &ax, &ay);
-        assert!(cyzx.is_some());
-        println!("{cyxz:?}");
+        println!("{cyzx:?}");
     }
 
     #[test]
@@ -672,7 +693,7 @@ mod tests {
         println!("{:?}", cwz[0].projection(&aw));
         println!("{:?}", cwz[1].projection(&aw));
 
-        let cwxz: MArrD2<X, Z, _> = MArrD1::<W, _>::merge_cond2(&cwx, &cwz, &ax, &az, &aw).unwrap();
+        let cwxz: MArrD2<X, Z, _> = MArrD1::<W, _>::merge_cond2(&cwx, &cwz, &ax, &az, &aw);
         println!("{:?}", cwxz[(0, 0)]);
         println!("{:?}", cwxz[(1, 0)]);
         println!("{:?}", cwxz[(0, 1)]);
@@ -687,8 +708,8 @@ mod tests {
             cwxz[(0, 1)].clone(),
             cwxz[(1, 1)].clone(),
         ]);
-        let cw_z0 = x.clone().deduce_with(&cwx_z0, aw.clone());
-        let cw_z1 = x.deduce_with(&cwx_z1, aw.clone());
+        let cw_z0 = x.clone().deduce_with(&cwx_z0, || aw.clone());
+        let cw_z1 = x.deduce_with(&cwx_z1, || aw.clone());
         let cw = marr_d1!(Z; [cw_z0.simplex, cw_z1.simplex]);
 
         println!("{:?}", cw[0]);
@@ -710,7 +731,7 @@ mod tests {
         let az = marr_d1!(Z; [0.999, 0.001]);
         let aw = marr_d1!(W; [0.999, 0.001]);
 
-        let cwzx: Option<MArrD2<Z, X, _>> = MArrD1::<W, _>::merge_cond2(&cwz, &cwx, &az, &ax, &aw);
+        let cwzx: MArrD2<Z, X, _> = MArrD1::<W, _>::merge_cond2(&cwz, &cwx, &az, &ax, &aw);
 
         println!("{:?}", cwzx);
     }

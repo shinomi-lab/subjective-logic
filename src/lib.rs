@@ -131,8 +131,8 @@ mod tests {
             Simplex::new([0.5, 0.25], 0.25),
             Simplex::new([0.5, 0.25], 0.25),
         ];
-        let w2 = w.deduce_with(&conds, ay);
-        let w3 = OpinionRef::from((&s, &a)).deduce_with(&conds, ay);
+        let w2 = w.deduce_with(&conds, || ay.clone());
+        let w3 = OpinionRef::from((&s, &a)).deduce_with(&conds, || ay.clone());
         assert_eq!(w2, w3);
     }
 

@@ -829,11 +829,11 @@ where
 
     fn deduce(self, conds: &'a Cond) -> Option<Self::Output> {
         let ay = mbr::<X, Y, T, Cond, U, V>(&self.base_rate, conds)?;
-        Some(self.deduce_with(conds, ay))
+        Some(deduce_of(self, conds, ay))
     }
 
-    fn deduce_with(self, conds: &'a Cond, ay: U) -> Self::Output {
-        let ay = mbr::<X, Y, T, Cond, U, V>(&self.base_rate, conds).unwrap_or(ay);
+    fn deduce_with<F: FnOnce() -> U>(self, conds: &'a Cond, f: F) -> Self::Output {
+        let ay = mbr::<X, Y, T, Cond, U, V>(&self.base_rate, conds).unwrap_or_else(f);
         deduce_of(self, conds, ay)
     }
 }
@@ -853,8 +853,8 @@ where
         self.as_ref().deduce(conds)
     }
 
-    fn deduce_with(self, conds: &'a Cond, ay: U) -> Self::Output {
-        self.as_ref().deduce_with(conds, ay)
+    fn deduce_with<F: FnOnce() -> U>(self, conds: &'a Cond, f: F) -> Self::Output {
+        self.as_ref().deduce_with(conds, f)
     }
 }
 
@@ -866,37 +866,35 @@ where
 {
     type InvCond;
     /// convert a set of joint conditions X => Y into a invert joint set of Y => X
-    fn inverse(&self, ax: &T, ay: &U) -> Option<Self::InvCond>;
+    fn inverse(&self, ax: &T, ay: &U) -> Self::InvCond;
 }
 
 impl<Cond, T, U, X, Y, V> InverseCondition<X, Y, T, U, V> for Cond
 where
-    T: Container<X, Output = V> + ContainerMap<X> + FromFn<X, V> + IndexMut<X>,
-    U: Container<Y, Output = V> + ContainerMap<Y> + FromFn<Y, V> + IndexMut<Y>,
+    T: Container<X, Output = V> + ContainerMap<X, Map<V>: IndexMut<X>> + FromFn<X, V> + IndexMut<X>,
+    U: Container<Y, Output = V>
+        + ContainerMap<Y, Map<T::Map<V>>: IndexMut<Y>>
+        + FromFn<Y, V>
+        + IndexMut<Y>,
     Cond: Container<X, Output = Simplex<U, V>> + ContainerMap<X>,
     X: Copy,
     Y: Copy,
     V: Float + AddAssign + DivAssign + Sum + UlpsEq,
-    T::Map<V>: IndexMut<X>,
-    U::Map<T::Map<V>>: IndexMut<Y>,
 {
     type InvCond = U::Map<Simplex<T, V>>;
 
-    fn inverse(&self, ax: &T, ay: &U) -> Option<Self::InvCond> {
+    fn inverse(&self, ax: &T, ay: &U) -> Self::InvCond {
         let p_yx: Cond::Map<U> = Cond::map(|x| self[x].projection(ay));
         let u_yx = T::from_fn(|x| self[x].max_uncertainty(ay));
-        let mut temp = U::map(|_| T::map(|_| V::zero()));
-        for y in U::indexes() {
-            for x in T::indexes() {
-                temp[y][x] = V::one();
-                let p = p_yx[x][y];
-                let q = T::indexes().map(|xd| ax[xd] * p_yx[xd][y]).sum::<V>();
-                if q == V::zero() && p == V::zero() {
-                    return None;
-                }
-                temp[y][x] = p / q;
+        let temp = U::map(|y| {
+            let is_all_zero = T::indexes().all(|x| p_yx[x][y] == V::zero());
+            if is_all_zero {
+                T::map(|_| V::one())
+            } else {
+                let q = T::indexes().map(|x| ax[x] * p_yx[x][y]).sum::<V>();
+                T::map(|x| p_yx[x][y] / q)
             }
-        }
+        });
         let p_xy: U::Map<T::Map<V>> = U::map(|y| T::map(|x| temp[y][x] * ax[x]));
         let irrelevance_yx = U::from_fn(|y| {
             V::one() - T::indexes().map(|x| p_yx[x][y]).reduce(<V>::max).unwrap()
@@ -925,11 +923,11 @@ where
             }
         });
         let wprop_u_yx = T::indexes().map(|x| weighted_u_yx[x]).sum::<V>();
-        Some(U::map(|y| {
+        U::map(|y| {
             let u = max_u_xy[y] * (wprop_u_yx + irrelevance_yx[y] - wprop_u_yx * irrelevance_yx[y]);
             let b = T::from_fn(|x| p_xy[y][x] - u * ax[x]);
             Simplex::normalized(b, u)
-        }))
+        })
     }
 }
 
@@ -947,12 +945,12 @@ where
 
     fn abduce(self, conds: &'a Cond, ax: T) -> Option<Self::Output> {
         let ay = mbr::<X, Y, T, Cond, U, V>(&ax, conds)?;
-        self.abduce_with(conds, ax, &ay)
+        Some(self.abduce_with(conds, ax, &ay))
     }
 
-    fn abduce_with(self, conds: &'a Cond, ax: T, ay: &U) -> Option<Self::Output> {
-        let inv_conds = InverseCondition::inverse(conds, &ax, ay)?;
-        Some(OpinionRef::<U, V>::from((self, ay)).deduce_with(&inv_conds, ax))
+    fn abduce_with(self, conds: &'a Cond, ax: T, ay: &U) -> Self::Output {
+        let inv_conds = InverseCondition::inverse(conds, &ax, ay);
+        deduce_of(OpinionRef::<U, V>::from((self, ay)), &inv_conds, ax)
     }
 }
 
@@ -972,7 +970,7 @@ where
         self.simplex.abduce(conds, ax)
     }
 
-    fn abduce_with(self, conds: &'a Cond, ax: T, ay: &U) -> Option<Self::Output> {
+    fn abduce_with(self, conds: &'a Cond, ax: T, ay: &U) -> Self::Output {
         self.simplex.abduce_with(conds, ax, ay)
     }
 }
@@ -993,7 +991,7 @@ where
         self.as_ref().abduce(conds, ax)
     }
 
-    fn abduce_with(self, conds: &'a Cond, ax: T, ay: &U) -> Option<Self::Output> {
+    fn abduce_with(self, conds: &'a Cond, ax: T, ay: &U) -> Self::Output {
         self.as_ref().abduce_with(conds, ax, ay)
     }
 }
@@ -1019,8 +1017,7 @@ where
 
 pub trait MergeJointConditions2<V, X1, X2, X1X2, Y, CYX1, CYX2, TX1, TX2, TY, U> {
     type Output;
-    fn merge_cond2(y_x1: &CYX1, y_x2: &CYX2, ax1: &TX1, ax2: &TX2, ay: &TY)
-        -> Option<Self::Output>;
+    fn merge_cond2(y_x1: &CYX1, y_x2: &CYX2, ax1: &TX1, ax2: &TX2, ay: &TY) -> Self::Output;
 }
 
 impl<V, X1, X2, X1X2, Y, CYX1, CYX2, TX1, TX2, TY, U, CX1X2Y>
@@ -1054,15 +1051,9 @@ where
 {
     type Output = CX1X2Y::InvCond;
 
-    fn merge_cond2(
-        y_x1: &CYX1,
-        y_x2: &CYX2,
-        ax1: &TX1,
-        ax2: &TX2,
-        ay: &TY,
-    ) -> Option<Self::Output> {
-        let x1_y = y_x1.inverse(ax1, mbr(ax1, y_x1).as_ref().unwrap_or(ay))?;
-        let x2_y = y_x2.inverse(ax2, mbr(ax2, y_x2).as_ref().unwrap_or(ay))?;
+    fn merge_cond2(y_x1: &CYX1, y_x2: &CYX2, ax1: &TX1, ax2: &TX2, ay: &TY) -> Self::Output {
+        let x1_y = y_x1.inverse(ax1, mbr(ax1, y_x1).as_ref().unwrap_or(ay));
+        let x2_y = y_x2.inverse(ax2, mbr(ax2, y_x2).as_ref().unwrap_or(ay));
         let x12_y = CX1X2Y::from_fn(|y| {
             let x1yr = OpinionRef::from((&x1_y[y], ax1));
             let x2yr = OpinionRef::from((&x2_y[y], ax2));
