@@ -47,6 +47,21 @@ where
 /// A multinomial opinion with a 1-dimensional domain `D0`.
 pub type OpinionD1<D0, V> = Opinion<MArrD1<D0, V>, V>;
 
+impl<D0, V> TryFrom<(Vec<V>, V, Vec<V>)> for OpinionD1<D0, V>
+where
+    D0: Domain<Idx: Debug> + Keys<D0::Idx>,
+    V: Float + AddAssign + UlpsEq,
+{
+    type Error = InvalidValueError;
+    fn try_from(value: (Vec<V>, V, Vec<V>)) -> Result<Self, Self::Error> {
+        Self::try_new(
+            MArrD1::from_iter(value.0),
+            value.1,
+            MArrD1::from_iter(value.2),
+        )
+    }
+}
+
 /// A multinomial opinion with a 1-dimensional domain `D0`.
 pub type OpinionD2<D0, D1, V> = Opinion<MArrD2<D0, D1, V>, V>;
 
