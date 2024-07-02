@@ -855,7 +855,7 @@ where
 
 pub trait InverseCondition<X, Y, T, U, V>
 where
-    Self: Index<X, Output = Simplex<U, V>>,
+    Self: Index<X, Output: Borrow<Simplex<U, V>>>,
     T: Index<X, Output = V>,
     U: Index<Y, Output = V>,
 {
@@ -871,7 +871,7 @@ where
         + ContainerMap<Y, Map<T::Map<V>>: IndexMut<Y>>
         + FromFn<Y, V>
         + IndexMut<Y>,
-    Cond: Container<X, Output = Simplex<U, V>> + ContainerMap<X>,
+    Cond: Container<X, Output: Borrow<Simplex<U, V>>> + ContainerMap<X>,
     X: Copy,
     Y: Copy,
     V: Float + AddAssign + DivAssign + Sum + UlpsEq,
@@ -879,8 +879,8 @@ where
     type InvCond = U::Map<Simplex<T, V>>;
 
     fn inverse(&self, ax: &T, ay: &U) -> Self::InvCond {
-        let p_yx: Cond::Map<U> = Cond::map(|x| self[x].projection(ay));
-        let u_yx = T::from_fn(|x| self[x].max_uncertainty(ay));
+        let p_yx: Cond::Map<U> = Cond::map(|x| self[x].borrow().projection(ay));
+        let u_yx = T::from_fn(|x| self[x].borrow().max_uncertainty(ay));
         let temp = U::map(|y| {
             let is_all_zero = T::indexes().all(|x| p_yx[x][y] == V::zero());
             if is_all_zero {
@@ -1018,16 +1018,16 @@ pub trait MergeJointConditions2<V, X1, X2, X1X2, Y, CYX1, CYX2, TX1, TX2, TY, U>
 impl<V, X1, X2, X1X2, Y, CYX1, CYX2, TX1, TX2, TY, U, CX1X2Y>
     MergeJointConditions2<V, X1, X2, X1X2, Y, CYX1, CYX2, TX1, TX2, TY, U> for CX1X2Y
 where
-    CYX1: Container<X1, Output = Simplex<TY, V>>
+    CYX1: Container<X1, Output: Borrow<Simplex<TY, V>>>
         + InverseCondition<X1, Y, TX1, TY, V>
         + ContainerMap<X1>,
-    CYX1::InvCond: Index<Y, Output = Simplex<TX1, V>>,
-    CYX2: Container<X2, Output = Simplex<TY, V>>
+    CYX1::InvCond: Index<Y, Output: Borrow<Simplex<TX1, V>>>,
+    CYX2: Container<X2, Output: Borrow<Simplex<TY, V>>>
         + InverseCondition<X2, Y, TX2, TY, V>
         + ContainerMap<X2>,
-    CYX2::InvCond: Index<Y, Output = Simplex<TX2, V>>,
+    CYX2::InvCond: Index<Y, Output: Borrow<Simplex<TX2, V>>>,
     CX1X2Y: FromFn<Y, Simplex<U, V>>
-        + Container<Y, Output = Simplex<U, V>>
+        + Container<Y, Output: Borrow<Simplex<U, V>>>
         + ContainerMap<Y>
         + InverseCondition<Y, X1X2, TY, U, V>,
     TX1: Container<X1, Output = V>,
@@ -1050,8 +1050,8 @@ where
         let x1_y = y_x1.inverse(ax1, mbr(ax1, y_x1).as_ref().unwrap_or(ay));
         let x2_y = y_x2.inverse(ax2, mbr(ax2, y_x2).as_ref().unwrap_or(ay));
         let x12_y = CX1X2Y::from_fn(|y| {
-            let x1yr = OpinionRef::from((&x1_y[y], ax1));
-            let x2yr = OpinionRef::from((&x2_y[y], ax2));
+            let x1yr = OpinionRef::from((x1_y[y].borrow(), ax1));
+            let x2yr = OpinionRef::from((x2_y[y].borrow(), ax2));
             let OpinionBase { simplex, .. } = Product2::product2(x1yr, x2yr);
             simplex
         });

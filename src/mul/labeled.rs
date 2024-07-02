@@ -126,7 +126,7 @@ mod tests {
 
     use super::{OpinionD1, OpinionD2, OpinionRefD1, SimplexD1};
     use crate::{
-        domain::{Domain, DomainConv},
+        domain::{Domain, DomainConv, Keys},
         impl_domain,
         iter::Container,
         marr_d1, marr_d2,
@@ -707,6 +707,38 @@ mod tests {
         let cyzx: MArrD2<Z, X, SimplexD1<Y, f64>> =
             MArrD1::<Y, _>::merge_cond2(&cyz, &cyx, &az, &ax, &ay);
         println!("{cyzx:?}");
+    }
+
+    #[test]
+    fn test_merge_joint_conds_ref() {
+        let cyx = marr_d1!(X; [
+            SimplexD1::<Y, f64>::new(marr_d1![0.4, 0.0, 0.2], 0.4),
+            SimplexD1::<Y, f64>::new(marr_d1![0.1, 0.2, 0.3], 0.4),
+        ]);
+        let cyz = marr_d1!(Z; [
+            SimplexD1::<Y, f64>::new(marr_d1![0.4, 0.0, 0.2], 0.4),
+            SimplexD1::<Y, f64>::new(marr_d1![0.6, 0.1, 0.1], 0.2),
+        ]);
+        let ax = marr_d1!(X; [0.5, 0.5]);
+        let az = marr_d1!(Z; [0.5, 0.5]);
+        let ay = marr_d1!(Y; [0.1, 0.1, 0.8]);
+
+        let cyxz: MArrD2<X, Z, SimplexD1<Y, f64>> =
+            MArrD1::<Y, _>::merge_cond2(&cyx, &cyz.as_ref(), &ax, &az, &ay);
+        let cyzx: MArrD2<Z, X, SimplexD1<Y, f64>> =
+            MArrD1::<Y, _>::merge_cond2(&cyz.as_ref(), &cyx, &az, &ax, &ay);
+
+        let x = OpinionD1::new(marr_d1![0.2, 0.4], 0.4, ax);
+        let z = OpinionD1::new(marr_d1![0.5, 0.3], 0.2, az);
+        let xz = OpinionD2::product2(&x, &z);
+        let zx = OpinionD2::product2(&z, &x);
+        let cy1 = xz.deduce(&cyxz).unwrap();
+        let cy2 = zx.deduce(&cyzx).unwrap();
+        for y in Y::keys() {
+            assert_ulps_eq!(cy1.b()[y], cy2.b()[y]);
+            assert_ulps_eq!(cy1.u(), cy2.u());
+            assert_ulps_eq!(cy1.base_rate[y], cy2.base_rate[y]);
+        }
     }
 
     #[test]
