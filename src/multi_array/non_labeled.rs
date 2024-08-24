@@ -253,9 +253,7 @@ macro_rules! impl_ha {
         }
 
         impl<V, const $k: usize$(, const $ks: usize)*> Indexes<[usize; $n]> for $ha<V, $k$(, $ks)*> {
-            type Iter = MultiRange<$n>;
-
-            fn indexes() -> Self::Iter {
+            fn indexes() -> impl Iterator<Item = [usize; $n]> {
                 MultiRange::new([$k$(, $ks)*])
             }
         }

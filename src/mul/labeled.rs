@@ -128,10 +128,11 @@ mod tests {
     use crate::{
         domain::{Domain, DomainConv, Keys},
         impl_domain,
-        iter::Container,
+        iter::{Container, FromFn},
         marr_d1, marr_d2,
         mul::{check_base_rate, mbr, InverseCondition},
         multi_array::labeled::{MArrD1, MArrD2},
+        new_type_domain,
         ops::{
             Abduction, Deduction, Discount, Fuse, FuseAssign, FuseOp, MaxUncertainty, Product2,
             Projection,
@@ -153,6 +154,19 @@ mod tests {
         [$ft:ty, $n:expr] => {
             |v: $ft| (v * <$ft>::powi(10.0, $n)).fract()
         };
+    }
+
+    new_type_domain!(pub NX = 2);
+    new_type_domain!(pub NW from NX);
+
+    #[test]
+    fn test_new_type_dom() {
+        let wx = marr_d1!(NX; [0, 1]);
+        let ww = MArrD1::<NW, _>::from_fn(|w| wx[NX::from(w)]);
+        assert_eq!(wx[NX(0)], 0);
+        assert_eq!(wx[NX(1)], 1);
+        assert_eq!(ww[NW(0)], 0);
+        assert_eq!(ww[NW(1)], 1);
     }
 
     struct X;

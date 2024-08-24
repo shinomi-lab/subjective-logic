@@ -75,9 +75,7 @@ pub trait Product3<T0, T1, T2> {
 }
 
 pub trait Indexes<K> {
-    type Iter: Iterator<Item = K>;
-
-    fn indexes() -> Self::Iter;
+    fn indexes() -> impl Iterator<Item = K>;
 }
 
 pub trait Zeros {

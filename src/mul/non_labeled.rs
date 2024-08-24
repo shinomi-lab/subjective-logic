@@ -1,6 +1,6 @@
 use std::{
     array,
-    ops::{AddAssign, DivAssign, Range},
+    ops::{AddAssign, DivAssign},
     usize,
 };
 
@@ -22,9 +22,7 @@ impl<V: Zero, const N: usize> Zeros for [V; N] {
 }
 
 impl<T, const N: usize> Indexes<usize> for [T; N] {
-    type Iter = Range<usize>;
-
-    fn indexes() -> Self::Iter {
+    fn indexes() -> impl Iterator<Item = usize> {
         0..N
     }
 }

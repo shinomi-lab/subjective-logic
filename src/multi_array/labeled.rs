@@ -223,16 +223,13 @@ where
 }
 
 impl<D0: Domain + Keys<D0::Idx>, V> Keys<D0::Idx> for MArrD1<D0, V> {
-    type Iter = D0::Iter;
-    fn keys() -> Self::Iter {
+    fn keys() -> impl Iterator<Item = D0::Idx> + Clone {
         D0::keys()
     }
 }
 
 impl<D0: Domain + Keys<D0::Idx>, V> Indexes<D0::Idx> for MArrD1<D0, V> {
-    type Iter = <Self as Keys<D0::Idx>>::Iter;
-
-    fn indexes() -> Self::Iter {
+    fn indexes() -> impl Iterator<Item = D0::Idx> {
         D0::keys()
     }
 }
@@ -416,8 +413,7 @@ where
     D0: Domain + Keys<D0::Idx>,
     D1: Domain + Keys<D1::Idx>,
 {
-    type Iter = itertools::Product<D0::Iter, D1::Iter>;
-    fn keys() -> Self::Iter {
+    fn keys() -> impl Iterator<Item = (D0::Idx, D1::Idx)> + Clone {
         iproduct!(D0::keys(), D1::keys())
     }
 }
@@ -427,9 +423,7 @@ where
     D0: Domain + Keys<D0::Idx>,
     D1: Domain + Keys<D1::Idx>,
 {
-    type Iter = <Self as Keys<(D0::Idx, D1::Idx)>>::Iter;
-
-    fn indexes() -> Self::Iter {
+    fn indexes() -> impl Iterator<Item = (D0::Idx, D1::Idx)> {
         Self::keys()
     }
 }
@@ -648,11 +642,7 @@ where
     D1: Domain + Keys<D1::Idx>,
     D2: Domain + Keys<D2::Idx>,
 {
-    type Iter = itertools::ConsTuples<
-        itertools::Product<itertools::Product<D0::Iter, D1::Iter>, D2::Iter>,
-        ((D0::Idx, D1::Idx), D2::Idx),
-    >;
-    fn keys() -> Self::Iter {
+    fn keys() -> impl Iterator<Item = (D0::Idx, D1::Idx, D2::Idx)> + Clone {
         iproduct!(D0::keys(), D1::keys(), D2::keys())
     }
 }
@@ -663,9 +653,7 @@ where
     D1: Domain + Keys<D1::Idx>,
     D2: Domain + Keys<D2::Idx>,
 {
-    type Iter = <Self as Keys<(D0::Idx, D1::Idx, D2::Idx)>>::Iter;
-
-    fn indexes() -> Self::Iter {
+    fn indexes() -> impl Iterator<Item = (D0::Idx, D1::Idx, D2::Idx)> {
         Self::keys()
     }
 }
